@@ -10,11 +10,12 @@ export interface Env {
   ROOM_DO: DurableObjectNamespace<RoomDO>;
   DB: D1Database;
   KV_ALIASES: KVNamespace;
+  ASSETS: Fetcher;
   AWS_REGION: string;
   AWS_ACCESS_KEY_ID: string;
   AWS_SECRET_ACCESS_KEY: string;
   S3_BUCKET_NAME: string;
-  FRONTEND_ORIGIN: string;
+  FRONTEND_ORIGIN: string | string[];
   MAX_FILE_SIZE: string;
 }
 

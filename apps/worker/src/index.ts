@@ -69,7 +69,14 @@ app.get("/api/room/:roomId/ws", async (c) => {
 
 
 
-app.notFound((c) => c.json({ error: "Not found", code: "NOT_FOUND" }, 404));
+app.notFound((c) => {
+  // Pass non-API requests through to the static asset binding (SPA).
+  // The ASSETS binding handles index.html fallback for client-side routes.
+  if (!c.req.path.startsWith("/api")) {
+    return c.env.ASSETS.fetch(c.req.raw);
+  }
+  return c.json({ error: "Not found", code: "NOT_FOUND" }, 404);
+});
 
 app.onError((err, c) => {
   console.error("Unhandled error:", err);

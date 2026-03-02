@@ -5,6 +5,18 @@
   "compatibility_date": "2025-03-01",
   "compatibility_flags": ["nodejs_compat_v2"],
 
+  // ── Static Assets (SPA) ───────────────────────────────────────────────────
+  // The built frontend (apps/web/dist) is served by this same Worker.
+  // Requests to /api/* are handled by the Worker script first.
+  // All other requests fall through to the static asset layer.
+  // not_found_handling: single-page-application serves index.html for unknown
+  // paths so React Router client-side routes work correctly.
+  "assets": {
+    "directory": "../web/dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application"
+  },
+
   // ── Environment variables ──────────────────────────────────────────────────
   // Secrets (set via `wrangler secret put`):
   //   AWS_ACCESS_KEY_ID      — AWS IAM Access Key ID
@@ -13,7 +25,10 @@
   "vars": {
     "AWS_REGION": "eu-north-1",
     "S3_BUCKET_NAME": "flop-files",
-    "FRONTEND_ORIGIN": ["https://flop.dhruvkoshta.dev","https://flop-xhg.pages.dev"],
+    // Frontend and Worker are now the same origin — CORS is only needed for
+    // any external origin (e.g. a custom domain before the Worker custom domain
+    // is set up). Keep the Workers.dev URL here; add your custom domain too.
+    "FRONTEND_ORIGIN": ["https://flop-worker.dhruvkoshta04.workers.dev", "https://flop.dhruvkoshta.dev"],
     "MAX_FILE_SIZE": "104857600"
   },
 
@@ -21,11 +36,10 @@
   // Run: wrangler kv namespace create ALIASES
   // Replace id with output from above command
   "kv_namespaces": [
-     {
+    {
       "binding": "KV_ALIASES",
       "id": "743113f541924282bc9fbceb96c49ba3",
       "preview_id": "743113f541924282bc9fbceb96c49ba3"
-
     }
   ],
 
@@ -34,7 +48,7 @@
   // Replace database_id with output from above command
   // Then run: bun run db:migrate:remote (in apps/worker)
   "d1_databases": [
-     {
+    {
       "binding": "DB",
       "database_name": "flop-db",
       "database_id": "1f50dbf3-6e47-4dec-9d48-5ab3bd218100",
