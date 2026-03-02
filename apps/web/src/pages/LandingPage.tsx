@@ -14,6 +14,30 @@ import Blocks from "@/components/ui/blocks";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import CharacterCursor from "@/components/ui/CharacterCursor";
 
+// Hoisted to module scope so references are stable across renders.
+// Inline literals here would create new array/Set objects every render,
+// causing CharacterCursor and Blocks to tear down and rebuild entirely.
+const CURSOR_CHARACTERS = ['f', 'l', 'o', 'p', '✦', '⊕', '⟡'];
+const CURSOR_COLORS = ['#6622CC', '#A755C2', '#B07C9E', '#D2A1B8', '#B59194'];
+const CURSOR_FONT = "bold 14px monospace";
+
+const HERO_ACTIVE_DIVS: Record<number, Set<number>> = {
+	0: new Set([2, 4, 6]),
+	1: new Set([0, 8]),
+	2: new Set([1, 3, 5]),
+	4: new Set([0, 5, 8]),
+	5: new Set([2, 4]),
+	7: new Set([2, 6, 9]),
+	8: new Set([0, 4]),
+	9: new Set([5]),
+	10: new Set([3, 6]),
+	11: new Set([1, 5]),
+	12: new Set([7]),
+	13: new Set([2, 4]),
+	14: new Set([5]),
+	15: new Set([1, 6]),
+};
+
 
 const FEATURES = [
 	{
@@ -53,11 +77,11 @@ export function LandingPage() {
 
 	return (
 		<>
-			<CharacterCursor
-				characters={['d', 'h', 'r', 'u', 'v',]}
-				colors={['#6622CC', '#A755C2', '#B07C9E', '#D2A1B8', '#B59194']}
-				font="bold 14px monospace"
-			/>
+		<CharacterCursor
+			characters={CURSOR_CHARACTERS}
+			colors={CURSOR_COLORS}
+			font={CURSOR_FONT}
+		/>
 		<div className="min-h-screen bg-background text-foreground flex flex-col">
 			{/* Nav */}
 			<header className="border-b border-border px-6 py-4 flex items-center justify-between">
@@ -89,28 +113,13 @@ export function LandingPage() {
 				className="flex-1 flex flex-col items-center justify-center px-6 py-20 text-center relative overflow-hidden"
 			>
 				{/* Blocks grid background */}
-				<Blocks
-					containerRef={heroRef}
-					classname="w-full opacity-15"
-					divClass="border-border/20"
-					activeDivsClass="bg-primary/10"
-					activeDivs={{
-						0: new Set([2, 4, 6]),
-						1: new Set([0, 8]),
-						2: new Set([1, 3, 5]),
-						4: new Set([0, 5, 8]),
-						5: new Set([2, 4]),
-						7: new Set([2, 6, 9]),
-						8: new Set([0, 4]),
-						9: new Set([5]),
-						10: new Set([3, 6]),
-						11: new Set([1, 5]),
-						12: new Set([7]),
-						13: new Set([2, 4]),
-						14: new Set([5]),
-						15: new Set([1, 6]),
-					}}
-				/>
+			<Blocks
+				containerRef={heroRef}
+				classname="w-full opacity-15"
+				divClass="border-border/20"
+				activeDivsClass="bg-primary/10"
+				activeDivs={HERO_ACTIVE_DIVS}
+			/>
 
 				{/* Fade-to-background gradient overlay */}
 				<div

@@ -28,23 +28,44 @@ interface CharacterCursorProps {
   wrapperElement?: HTMLElement;
 }
 
+// ─── Module-scope defaults ───────────────────────────────────────────────────
+// Defined outside the component so their references are stable across renders.
+// If these were arrow functions in the prop destructure, every parent render
+// would create new function instances, causing the entire canvas effect to tear
+// down and rebuild (CURSOR-3).
+
+const DEFAULT_CURSOR_OFFSET = { x: 0, y: 0 };
+
+const defaultCharacterLifeSpan = () => Math.floor(Math.random() * 60 + 80);
+
+const defaultInitialCharacterVelocity = () => ({
+  x: (Math.random() < 0.5 ? -1 : 1) * Math.random() * 5,
+  y: (Math.random() < 0.5 ? -1 : 1) * Math.random() * 5,
+});
+
+const defaultCharacterVelocityChange = {
+  x_func: () => (Math.random() < 0.5 ? -1 : 1) / 30,
+  y_func: () => (Math.random() < 0.5 ? -1 : 1) / 15,
+};
+
+const defaultCharacterScaling = (age: number, lifeSpan: number) =>
+  Math.max(((lifeSpan - age) / lifeSpan) * 2, 0);
+
+const defaultCharacterNewRotationDegrees = (age: number, lifeSpan: number) =>
+  (lifeSpan - age) / 5;
+
+// ─── Component ────────────────────────────────────────────────────────────────
+
 const CharacterCursor: React.FC<CharacterCursorProps> = ({
   characters = ['h', 'e', 'l', 'l', 'o'],
   colors = ['#6622CC', '#A755C2', '#B07C9E', '#B59194', '#D2A1B8'],
-  cursorOffset = { x: 0, y: 0 },
+  cursorOffset = DEFAULT_CURSOR_OFFSET,
   font = '15px serif',
-  characterLifeSpanFunction = () => Math.floor(Math.random() * 60 + 80),
-  initialCharacterVelocityFunction = () => ({
-    x: (Math.random() < 0.5 ? -1 : 1) * Math.random() * 5,
-    y: (Math.random() < 0.5 ? -1 : 1) * Math.random() * 5,
-  }),
-  characterVelocityChangeFunctions = {
-    x_func: () => (Math.random() < 0.5 ? -1 : 1) / 30,
-    y_func: () => (Math.random() < 0.5 ? -1 : 1) / 15,
-  },
-  characterScalingFunction = (age, lifeSpan) =>
-    Math.max(((lifeSpan - age) / lifeSpan) * 2, 0),
-  characterNewRotationDegreesFunction = (age, lifeSpan) => (lifeSpan - age) / 5,
+  characterLifeSpanFunction = defaultCharacterLifeSpan,
+  initialCharacterVelocityFunction = defaultInitialCharacterVelocity,
+  characterVelocityChangeFunctions = defaultCharacterVelocityChange,
+  characterScalingFunction = defaultCharacterScaling,
+  characterNewRotationDegreesFunction = defaultCharacterNewRotationDegrees,
   wrapperElement,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -145,6 +166,9 @@ const CharacterCursor: React.FC<CharacterCursorProps> = ({
       context.textBaseline = 'middle';
       context.textAlign = 'center';
 
+      // CURSOR-5: Clear before re-push so re-runs don't accumulate duplicates
+      canvImagesRef.current = [];
+
       characters.forEach((char) => {
         const measurements = context.measureText(char);
         const bgCanvas = document.createElement('canvas');
@@ -171,7 +195,8 @@ const CharacterCursor: React.FC<CharacterCursorProps> = ({
 
     const bindEvents = () => {
       const element = wrapperElement || document.body;
-      element.addEventListener('mousemove', onMouseMove);
+      // CURSOR-1: passive: true prevents browser from blocking scroll
+      element.addEventListener('mousemove', onMouseMove, { passive: true });
       element.addEventListener('touchmove', onTouchMove, { passive: true });
       element.addEventListener('touchstart', onTouchMove, { passive: true });
       window.addEventListener('resize', onWindowResize);
@@ -228,13 +253,12 @@ const CharacterCursor: React.FC<CharacterCursorProps> = ({
 
       context.clearRect(0, 0, canvas.width, canvas.height);
 
-      for (let i = 0; i < particlesRef.current.length; i++) {
-        particlesRef.current[i].update(context);
-      }
-
+      // CURSOR-6: Single backward pass — update and cull in one loop
       for (let i = particlesRef.current.length - 1; i >= 0; i--) {
         if (particlesRef.current[i].lifeSpan < 0) {
           particlesRef.current.splice(i, 1);
+        } else {
+          particlesRef.current[i].update(context);
         }
       }
 

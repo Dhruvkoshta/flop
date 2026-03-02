@@ -298,6 +298,9 @@ export function PersonalRoomPage() {
 	const [sizeErrors, setSizeErrors] = useState<string[]>([]);
 	const [deleteError, setDeleteError] = useState<string | null>(null);
 
+	// Cache the password hash so deleteFile and uploadFiles don't rehash on every call
+	const ownerPasswordHashRef = useRef<string | null>(null);
+
 	const inputRef = useRef<HTMLInputElement>(null);
 	const inputId = useId();
 
@@ -327,6 +330,8 @@ export function PersonalRoomPage() {
 				setAuthError("Incorrect password");
 				return;
 			}
+			// Cache hash so subsequent delete/upload calls don't rehash
+			ownerPasswordHashRef.current = passwordHash;
 			setOwnerPassword(password);
 			setIsOwner(true);
 		} catch {
@@ -362,18 +367,18 @@ export function PersonalRoomPage() {
 	);
 
 	const handleUpload = async () => {
-		if (!room || !ownerPassword || pendingFiles.length === 0) return;
-		await uploadFiles(pendingFiles, ownerPassword, room.roomId);
+		if (!room || !ownerPasswordHashRef.current || pendingFiles.length === 0) return;
+		await uploadFiles(pendingFiles, ownerPasswordHashRef.current, room.roomId);
 		setPendingFiles([]);
 		// Reload room to get updated file list
 		if (alias) await loadRoom(alias);
 	};
 
 	const handleDelete = async (fileId: string) => {
-		if (!room || !ownerPassword) return;
+		if (!room || !ownerPasswordHashRef.current) return;
 		setDeleteError(null);
 		try {
-			await deleteFile(fileId, ownerPassword, room.roomId);
+			await deleteFile(fileId, ownerPasswordHashRef.current, room.roomId);
 		} catch (err) {
 			setDeleteError(err instanceof Error ? err.message : "Delete failed");
 		}

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 
 type Theme = "light" | "dark";
 
@@ -21,16 +21,10 @@ function applyTheme(theme: Theme) {
 
 export function useTheme() {
 	const [theme, setThemeState] = useState<Theme>(() => {
-		// SSR-safe: default to light, reconcile in effect
-		return "light";
-	});
-
-	// Apply initial theme on mount
-	useEffect(() => {
 		const initial = getInitialTheme();
-		setThemeState(initial);
 		applyTheme(initial);
-	}, []);
+		return initial;
+	});
 
 	const setTheme = useCallback((next: Theme) => {
 		setThemeState(next);

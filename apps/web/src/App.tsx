@@ -30,15 +30,13 @@ export default function App() {
 	useTheme();
 
 	return (
-		<>
-			<Routes>
-				<Route path="/" element={<LandingPage />} />
-				<Route path="/personal" element={<PersonalRoomCreatePage />} />
-				<Route path="/u/:alias" element={<PersonalRoomPage />} />
-				<Route path="/send" element={<SendPage />} />
-				<Route path="/r/:roomId" element={<ReceivePage />} />
-				<Route path="*" element={<NotFound />} />
-			</Routes>
-		</>
+		<Routes>
+			<Route path="/" element={<LandingPage />} />
+			<Route path="/personal" element={<PersonalRoomCreatePage />} />
+			<Route path="/u/:alias" element={<PersonalRoomPage />} />
+			<Route path="/send" element={<SendPage />} />
+			<Route path="/r/:roomId" element={<ReceivePage />} />
+			<Route path="*" element={<NotFound />} />
+		</Routes>
 	);
 }

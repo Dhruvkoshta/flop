@@ -15,7 +15,7 @@ import {
 	Wifi,
 	X,
 } from "lucide-react";
-import { useCallback, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useSendTransfer } from "@/hooks/useSendTransfer";
 import { cn, formatBytes } from "@/lib/utils";
@@ -43,6 +43,14 @@ export function SendPage() {
 
 	const inputRef = useRef<HTMLInputElement>(null);
 	const inputId = useId();
+	const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+	// Clear copy-feedback timeout on unmount to avoid setState on unmounted component
+	useEffect(() => {
+		return () => {
+			if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
+		};
+	}, []);
 
 	const isIdle = phase === "idle";
 	const isActive =
@@ -85,7 +93,8 @@ export function SendPage() {
 		if (!shareUrl) return;
 		await navigator.clipboard.writeText(shareUrl);
 		setCopied(true);
-		setTimeout(() => setCopied(false), 2500);
+		if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
+		copyTimeoutRef.current = setTimeout(() => setCopied(false), 2500);
 	};
 
 	const handleReset = () => {

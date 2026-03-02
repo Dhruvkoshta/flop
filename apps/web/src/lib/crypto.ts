@@ -194,10 +194,8 @@ export function parseShareUrl(): { fileId: string; keyBase64: string } | null {
 
 export function bufferToBase64url(buffer: ArrayBuffer | Uint8Array): string {
 	const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
-	let binary = "";
-	for (const byte of bytes) {
-		binary += String.fromCharCode(byte);
-	}
+	// Use apply-spread instead of a loop to avoid O(n) string concatenation
+	const binary = String.fromCharCode(...bytes);
 	return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
 }
 

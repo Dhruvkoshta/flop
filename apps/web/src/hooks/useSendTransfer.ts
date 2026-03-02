@@ -28,7 +28,7 @@ import type {
 	ServerMessage,
 	TransferProgress,
 } from "@flop/shared";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
 	decryptBlob,
 	downloadBuffer,
@@ -68,6 +68,14 @@ export function useSendTransfer(): UseSendTransferReturn {
 	const wsRef = useRef<WebSocket | null>(null);
 	const senderRef = useRef<{ handleSignal: (p: RTCSignalPayload) => Promise<void>; close: () => void } | null>(null);
 	const doneRef = useRef(false);
+
+	// Cleanup on unmount: close any live WebSocket / sender peer connection
+	useEffect(() => {
+		return () => {
+			wsRef.current?.close();
+			senderRef.current?.close();
+		};
+	}, []);
 
 	const reset = useCallback(() => {
 		wsRef.current?.close();
@@ -125,15 +133,15 @@ export function useSendTransfer(): UseSendTransferReturn {
 			}
 			const { fileId, putUrl } = (await addRes.json()) as AddSendFileResponse;
 
-			// Step 4: Upload to S3
-			setPhase("uploading");
-			await uploadWithProgress(putUrl, encryptedBlob, (bytes, total) => {
-				setProgress({
-					bytes,
-					total,
-					percent: total > 0 ? Math.round((bytes / total) * 100) : 0,
-				});
+		// Step 4: Upload to S3
+		setPhase("uploading");
+		await uploadWithProgress(putUrl, encryptedBlob, (bytes, total) => {
+			const percent = total > 0 ? Math.round((bytes / total) * 100) : 0;
+			setProgress((prev) => {
+				if (prev.percent === percent) return prev;
+				return { bytes, total, percent };
 			});
+		});
 
 			// Build share URL — no fragment needed, key is stored server-side
 			const url = `${window.location.origin}/r/${roomId}`;
@@ -300,10 +308,10 @@ export function useReceiveTransfer(): UseReceiveTransferReturn {
 							ws.send(JSON.stringify(sigMsg));
 						},
 						(bytes, total) => {
-							setProgress({
-								bytes,
-								total,
-								percent: total > 0 ? Math.round((bytes / total) * 100) : 0,
+							const percent = total > 0 ? Math.round((bytes / total) * 100) : 0;
+							setProgress((prev) => {
+								if (prev.percent === percent) return prev;
+								return { bytes, total, percent };
 							});
 							setPhase("p2p_receiving");
 						},
@@ -318,6 +326,7 @@ export function useReceiveTransfer(): UseReceiveTransferReturn {
 					// Handle P2P result
 					receiver.result
 						.then(async ({ blob, filename: fname }) => {
+							clearTimeout(p2pTimeoutId);
 							setPhase("decrypting");
 							const plaintext = await decryptBlob(blob, key);
 							downloadBuffer(plaintext, fname, roomFile.mimeType);
@@ -358,7 +367,7 @@ export function useReceiveTransfer(): UseReceiveTransferReturn {
 					ws.onerror = () => rejectP2P(new Error("WebSocket error"));
 
 					// Timeout: if no progress after 20s, fall back
-					setTimeout(() => {
+					const p2pTimeoutId = setTimeout(() => {
 						if (!p2pSucceeded) {
 							rejectP2P(new Error("P2P timeout"));
 						}
@@ -412,9 +421,14 @@ function uploadWithProgress(
 		xhr.open("PUT", url);
 		xhr.setRequestHeader("Content-Type", "application/octet-stream");
 
+		let lastPercent = -1;
 		xhr.upload.onprogress = (event) => {
 			if (event.lengthComputable) {
-				onProgress(event.loaded, event.total);
+				const percent = Math.round((event.loaded / event.total) * 100);
+				if (percent !== lastPercent) {
+					lastPercent = percent;
+					onProgress(event.loaded, event.total);
+				}
 			}
 		};
 

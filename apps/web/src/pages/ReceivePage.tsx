@@ -36,8 +36,7 @@ export function ReceivePage() {
 		return () => {
 			reset();
 		};
-	// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [roomId]);
+	}, [roomId, receive, reset]);
 
 	const isConnecting = phase === "connecting" || phase === "p2p_connecting";
 	const isReceiving =

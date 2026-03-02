@@ -107,7 +107,7 @@ export interface UsePersonalRoomReturn {
 	uploadError: string | null;
 	uploadFiles: (
 		files: File[],
-		password: string,
+		passwordHash: string,
 		roomId: string,
 	) => Promise<void>;
 	resetUpload: () => void;
@@ -115,7 +115,7 @@ export interface UsePersonalRoomReturn {
 	// delete
 	deleteFile: (
 		fileId: string,
-		password: string,
+		passwordHash: string,
 		roomId: string,
 	) => Promise<void>;
 }
@@ -173,12 +173,12 @@ export function usePersonalRoom(): UsePersonalRoomReturn {
 	}, []);
 
 	const uploadFiles = useCallback(
-		async (files: File[], password: string, roomId: string) => {
+		async (files: File[], passwordHash: string, roomId: string) => {
 			try {
 				setUploadPhase("encrypting");
 				setUploadError(null);
 
-				const passwordHash = await hashPassword(password);
+				// passwordHash is passed in pre-computed by the caller
 
 				const initialStates: PersonalFileUploadState[] = files.map((f) => ({
 					file: f,
@@ -238,16 +238,13 @@ export function usePersonalRoom(): UsePersonalRoomReturn {
 						progress: { bytes: 0, total: encryptedBlob.byteLength, percent: 0 },
 					});
 
-					// Upload to S3
-					await uploadWithProgress(putUrl, encryptedBlob, (bytes, total) => {
-						updateUploadFile(i, {
-							progress: {
-								bytes,
-								total,
-								percent: total > 0 ? Math.round((bytes / total) * 100) : 0,
-							},
-						});
+				// Upload to S3
+				await uploadWithProgress(putUrl, encryptedBlob, (bytes, total) => {
+					const percent = total > 0 ? Math.round((bytes / total) * 100) : 0;
+					updateUploadFile(i, {
+						progress: { bytes, total, percent },
 					});
+				});
 
 					updateUploadFile(i, { phase: "done", fileId });
 				}
@@ -262,8 +259,8 @@ export function usePersonalRoom(): UsePersonalRoomReturn {
 	);
 
 	const deleteFile = useCallback(
-		async (fileId: string, password: string, roomId: string) => {
-			const passwordHash = await hashPassword(password);
+		async (fileId: string, passwordHash: string, roomId: string) => {
+			// passwordHash is passed in pre-computed by the caller
 
 			const res = await fetch(`/api/rooms/${roomId}/files/${fileId}`, {
 				method: "DELETE",
@@ -416,9 +413,14 @@ function uploadWithProgress(
 		xhr.open("PUT", url);
 		xhr.setRequestHeader("Content-Type", "application/octet-stream");
 
+		let lastPercent = -1;
 		xhr.upload.onprogress = (event) => {
 			if (event.lengthComputable) {
-				onProgress(event.loaded, event.total);
+				const percent = Math.round((event.loaded / event.total) * 100);
+				if (percent !== lastPercent) {
+					lastPercent = percent;
+					onProgress(event.loaded, event.total);
+				}
 			}
 		};
 
