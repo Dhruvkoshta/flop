@@ -17,7 +17,4 @@ ALTER TABLE `aliases_new` RENAME TO `aliases`;
 -- Add alias back-reference to rooms for easy lookup
 ALTER TABLE `rooms` ADD COLUMN `alias` text;
 
--- Add created_at to files for display on personal room pages
--- (column may already exist in some deployments — guard with IF NOT EXISTS not supported
---  in older SQLite; use a safe default approach)
-ALTER TABLE `files` ADD COLUMN `file_created_at` integer;
+-- Note: `created_at` already exists on `files` from migration 0001; no action needed here.

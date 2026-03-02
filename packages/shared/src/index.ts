@@ -1,127 +1,146 @@
-// ─── API Request / Response Types ──────────────────────────────────────────
+// ─── Room types ───────────────────────────────────────────────────────────────
 
-/** Create a new room with policies */
-export interface CreateRoomRequest {
-  /** Optional label shown to recipients */
-  label?: string;
-  /** Hours until expiry: 1–168 for send rooms, 168/720 for personal rooms (default 24h) */
-  expiresIn?: number;
-  /** If true, recipients can only download files once */
-  oneTimeDownload?: boolean;
-  /** Optional password hash for room access (SHA-256 hex, computed client-side) */
-  passwordHash?: string;
-  /** Optional alias to register (e.g. "dhruv" → /u/dhruv) */
-  alias?: string;
+/**
+ * "personal" — owner-managed room accessible at /u/:alias.
+ *   Keys stored server-side; anyone can download, owner (via password) can upload/delete.
+ *
+ * "send" — ephemeral one-shot transfer room at /r/:roomId.
+ *   Decryption key lives only in the URL fragment; server never sees it.
+ *   Transfer uses WebRTC P2P with S3 fallback.
+ */
+export type RoomMode = "personal" | "send";
+
+// ─── Personal Room API Types ──────────────────────────────────────────────────
+
+export interface CreatePersonalRoomRequest {
+  alias: string;           // e.g. "dhruv" → /u/dhruv
+  label?: string;          // display title shown on the room page
+  passwordHash: string;    // SHA-256 hex of the owner password (required)
+  expiresIn: number;       // hours: 24 | 168 | 720
 }
 
-export interface CreateRoomResponse {
+export interface CreatePersonalRoomResponse {
   roomId: string;
-  expiresAt: string;
-  /** Set if an alias was registered */
-  alias?: string;
-}
-
-/** Verify room password */
-export interface VerifyPasswordRequest {
-  passwordHash: string;
-}
-
-/** Resolve alias → roomId */
-export interface AliasResolveResponse {
   alias: string;
-  roomId: string;
-  expiresAt: string | null;
+  expiresAt: string;
 }
 
-/** Add a file to a room — metadata only, returns presigned PUT URL */
-export interface AddFileRequest {
-  roomId: string;
+/** Add a file to a personal room (owner-only, password required) */
+export interface AddPersonalFileRequest {
   name: string;
   size: number;
   mimeType: string;
-  /** IV as base64url — generated client-side */
-  iv: string;
-  /** Per-file AES-GCM-256 key as base64url — stored room-side so the room link carries all keys */
-  keyBase64: string;
+  iv: string;          // base64url IV generated client-side
+  keyBase64: string;   // base64url AES-GCM-256 key stored server-side
+  passwordHash: string; // proves ownership
 }
 
-export interface AddFileResponse {
+export interface AddPersonalFileResponse {
   fileId: string;
   putUrl: string;
   expiresAt: string;
 }
 
-/** Single file entry inside a room listing */
-export interface RoomFile {
+/** A single file entry on a personal room page */
+export interface PersonalRoomFile {
   fileId: string;
   name: string;
   size: number;
   mimeType: string;
   iv: string;
-  /** base64url key for this file */
   keyBase64: string;
   getUrl: string;
   downloadCount: number;
   createdAt: string;
 }
 
-/** GET /api/room/:roomId — room metadata + file list */
-export interface RoomMetaResponse {
+/** GET /api/rooms/:roomId — personal room metadata + file list (public) */
+export interface PersonalRoomResponse {
   roomId: string;
+  alias: string;
   label: string | null;
-  alias: string | null;
-  oneTimeDownload: boolean;
-  hasPassword: boolean;
   expiresAt: string;
-  files: RoomFile[];
+  files: PersonalRoomFile[];
 }
 
-// Legacy single-file types kept for reference during migration
+// ─── Send Room API Types ──────────────────────────────────────────────────────
 
-export interface UploadRequest {
-  name: string;
-  size: number;
-  mimeType: string;
-  /** IV as base64url — generated client-side, sent so server can store it */
-  iv: string;
+/**
+ * Create an ephemeral send room.
+ */
+export interface CreateSendRoomRequest {
+  expiresIn?: number; // hours, default 24
 }
 
-export interface UploadResponse {
-  fileId: string;
+export interface CreateSendRoomResponse {
   roomId: string;
-  putUrl: string;
-  /** ISO timestamp when file expires */
   expiresAt: string;
 }
 
-export interface FileMetaResponse {
+/**
+ * Register a file in a send room — key stored server-side.
+ * "send" — ephemeral one-shot transfer room at /r/:roomId.
+ *   Decryption key is stored server-side; anyone with the link can download.
+ *   Transfer uses WebRTC P2P with S3 fallback.
+ */
+export interface AddSendFileRequest {
+  name: string;
+  size: number;
+  mimeType: string;
+  iv: string;        // base64url IV generated client-side
+  keyBase64: string; // base64url AES-GCM-256 key — stored server-side
+}
+
+export interface AddSendFileResponse {
+  fileId: string;
+  putUrl: string;
+  expiresAt: string;
+}
+
+/** GET /api/rooms/:roomId/send — send room metadata + file list */
+export interface SendRoomFile {
   fileId: string;
   name: string;
   size: number;
-  encryptedSize?: number;
   mimeType: string;
   iv: string;
+  keyBase64: string; // stored server-side; returned to receiver for decryption
   getUrl: string;
-  expiresAt: string;
 }
+
+export interface SendRoomResponse {
+  roomId: string;
+  expiresAt: string;
+  files: SendRoomFile[];
+}
+
+// ─── Shared error type ────────────────────────────────────────────────────────
 
 export interface ErrorResponse {
   error: string;
   code?: string;
 }
 
-// ─── WebSocket / Signaling Message Types ───────────────────────────────────
+// ─── Alias resolution ─────────────────────────────────────────────────────────
+
+export interface AliasResolveResponse {
+  alias: string;
+  roomId: string;
+  expiresAt: string | null;
+}
+
+// ─── WebSocket / Signaling Message Types ────────────────────────────────────
 
 export type PeerRole = "sender" | "receiver";
 
-// Messages sent from Client → Server (RoomDO)
+// Client → Server (RoomDO)
 export type ClientMessage =
   | { type: "join"; role: PeerRole; fileId: string }
   | { type: "signal"; payload: RTCSignalPayload; fileId?: string }
   | { type: "ping" }
   | { type: "leave" };
 
-// Messages sent from Server (RoomDO) → Client
+// Server (RoomDO) → Client
 export type ServerMessage =
   | { type: "joined"; role: PeerRole; peersOnline: number; senderOnline: boolean }
   | { type: "peer_joined"; role: PeerRole; senderOnline: boolean }
@@ -135,19 +154,19 @@ export type RTCSignalPayload =
   | { kind: "answer"; sdp: RTCSessionDescriptionInit }
   | { kind: "ice"; candidate: RTCIceCandidateInit };
 
-// ─── Transfer State Machine ─────────────────────────────────────────────────
+// ─── Transfer State Machines ─────────────────────────────────────────────────
 
-export type UploadState =
+export type SendPhase =
   | "idle"
   | "encrypting"
-  | "uploading"
-  | "waiting_for_peer"
+  | "uploading"          // uploading to S3
+  | "waiting_for_peer"   // waiting for receiver to connect via WS
   | "p2p_connecting"
   | "p2p_transferring"
   | "done"
   | "error";
 
-export type DownloadState =
+export type ReceivePhase =
   | "idle"
   | "connecting"
   | "p2p_connecting"
@@ -158,44 +177,31 @@ export type DownloadState =
   | "error";
 
 export interface TransferProgress {
-  /** Bytes transferred so far */
   bytes: number;
-  /** Total bytes expected (0 if unknown) */
   total: number;
-  /** 0–100 */
   percent: number;
 }
 
-// ─── Room Upload State ───────────────────────────────────────────────────────
+// ─── Personal Room Upload State ───────────────────────────────────────────────
 
-export type RoomUploadPhase =
+export type PersonalUploadPhase =
   | "idle"
-  | "creating_room"
   | "encrypting"
   | "uploading"
   | "done"
   | "error";
 
-export interface RoomFileUploadState {
+export interface PersonalFileUploadState {
   file: File;
   fileId: string | null;
-  keyBase64: string | null;
   phase: "pending" | "encrypting" | "uploading" | "done" | "error";
   progress: TransferProgress;
   error: string | null;
 }
 
-// ─── Room Download State ─────────────────────────────────────────────────────
+// ─── Personal Room Download State ────────────────────────────────────────────
 
-export type RoomDownloadPhase =
-  | "idle"
-  | "loading"
-  | "ready"
-  | "downloading"
-  | "done"
-  | "error";
-
-export interface RoomFileDownloadState {
+export interface PersonalFileDownloadState {
   fileId: string;
   name: string;
   size: number;
@@ -204,17 +210,4 @@ export interface RoomFileDownloadState {
   phase: "idle" | "downloading" | "decrypting" | "done" | "error";
   progress: TransferProgress;
   error: string | null;
-}
-
-// ─── Room State ─────────────────────────────────────────────────────────────
-
-export type RoomStatus = "waiting" | "connected" | "transferring" | "done";
-
-export interface RoomRecord {
-  roomId: string;
-  fileId: string;
-  status: RoomStatus;
-  senderOnline: boolean;
-  createdAt: number;
-  expiresAt: number;
 }

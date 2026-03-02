@@ -1,7 +1,9 @@
 import { Route, Routes } from "react-router-dom";
 import { LandingPage } from "@/pages/LandingPage";
-import { RoomDownloadPage } from "@/pages/RoomDownloadPage";
-import { RoomUploadPage } from "@/pages/RoomUploadPage";
+import { PersonalRoomCreatePage } from "@/pages/PersonalRoomCreatePage";
+import { PersonalRoomPage } from "@/pages/PersonalRoomPage";
+import { SendPage } from "@/pages/SendPage";
+import { ReceivePage } from "@/pages/ReceivePage";
 
 function NotFound() {
 	return (
@@ -26,8 +28,10 @@ export default function App() {
 	return (
 		<Routes>
 			<Route path="/" element={<LandingPage />} />
-			<Route path="/send" element={<RoomUploadPage />} />
-			<Route path="/r/:roomId" element={<RoomDownloadPage />} />
+			<Route path="/personal" element={<PersonalRoomCreatePage />} />
+			<Route path="/u/:alias" element={<PersonalRoomPage />} />
+			<Route path="/send" element={<SendPage />} />
+			<Route path="/r/:roomId" element={<ReceivePage />} />
 			<Route path="*" element={<NotFound />} />
 		</Routes>
 	);

@@ -5,6 +5,7 @@ import { secureHeaders } from "hono/secure-headers";
 import type { Env } from "./RoomDO";
 import { roomRouter } from "./routes/room";
 import { aliasRouter } from "./routes/alias";
+import { fileRouter } from "./routes/file";
 
 // Re-export the Durable Object class — wrangler requires it as a named export
 export { RoomDO } from "./RoomDO";
@@ -42,6 +43,7 @@ app.get("/api/health", (c) =>
 
 app.route("/api/rooms", roomRouter);
 app.route("/api/aliases", aliasRouter);
+app.route("/api/file", fileRouter);
 
 // ── WebSocket signaling (RoomDO) ──────────────────────────────────────────────
 //
@@ -62,7 +64,7 @@ app.get("/api/room/:roomId/ws", async (c) => {
   return stub.fetch(new Request(url.toString(), c.req.raw));
 });
 
-// ── 404 fallback ─────────────────────────────────────────────────────────────
+
 
 app.notFound((c) => c.json({ error: "Not found", code: "NOT_FOUND" }, 404));
 

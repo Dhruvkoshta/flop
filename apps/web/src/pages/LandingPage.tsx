@@ -2,9 +2,10 @@ import {
 	ArrowRight,
 	Clock,
 	Eye,
-	Layers,
 	Lock,
+	Send,
 	Shield,
+	User,
 	Zap,
 } from "lucide-react";
 import { useRef } from "react";
@@ -19,23 +20,23 @@ const FEATURES = [
 	},
 	{
 		icon: Eye,
-		title: "Zero Plaintext",
-		desc: "The server stores only ciphertext. Your files are unreadable at rest.",
-	},
-	{
-		icon: Layers,
-		title: "Multi-File Rooms",
-		desc: "Bundle any number of files into one room. One link for everything.",
+		title: "Zero Knowledge",
+		desc: "The server stores only ciphertext. Your keys never touch our servers.",
 	},
 	{
 		icon: Clock,
 		title: "Auto-Expiry",
-		desc: "Rooms self-destruct in 1h, 6h, 24h, 2d, or 7d. No cleanup needed.",
+		desc: "Rooms self-destruct in 24h, 7d, or 30d. No manual cleanup needed.",
 	},
 	{
 		icon: Shield,
-		title: "One-Time Download",
-		desc: "Optionally restrict each file to a single download. Access revoked after.",
+		title: "Password Protected",
+		desc: "Personal rooms are owner-gated. Only you can upload or delete files.",
+	},
+	{
+		icon: Send,
+		title: "P2P First",
+		desc: "Send transfers attempt WebRTC peer-to-peer before falling back to S3.",
 	},
 	{
 		icon: Zap,
@@ -54,13 +55,22 @@ export function LandingPage() {
 				<span className="text-xl font-bold tracking-widest uppercase">
 					flop
 				</span>
-				<Link
-					to="/send"
-					className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 text-xs font-bold uppercase tracking-widest hover:bg-primary/90 transition-colors"
-				>
-					Send Files
-					<ArrowRight className="h-3.5 w-3.5" />
-				</Link>
+				<div className="flex items-center gap-2">
+					<Link
+						to="/personal"
+						className="flex items-center gap-2 border border-border text-foreground px-4 py-2 text-xs font-bold uppercase tracking-widest hover:border-primary/60 transition-colors"
+					>
+						<User className="h-3.5 w-3.5" />
+						Personal Room
+					</Link>
+					<Link
+						to="/send"
+						className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 text-xs font-bold uppercase tracking-widest hover:bg-primary/90 transition-colors"
+					>
+						Send Files
+						<ArrowRight className="h-3.5 w-3.5" />
+					</Link>
+				</div>
 			</header>
 
 			{/* Hero */}
@@ -123,32 +133,32 @@ export function LandingPage() {
 
 					{/* Subhead */}
 					<p className="text-base sm:text-lg text-muted-foreground max-w-xl mx-auto leading-relaxed">
-						Encrypted in your browser with AES-GCM-256. One link for all your
-						files. Self-destructs on schedule.
+						Encrypted in your browser with AES-GCM-256. Two modes: a
+						persistent personal room at your own alias, or an ephemeral
+						peer-to-peer send with zero server-side keys.
 					</p>
 
 					{/* CTA */}
 					<div className="flex flex-col sm:flex-row items-center justify-center gap-3">
 						<Link
-							to="/send"
+							to="/personal"
 							className="flex items-center gap-2 bg-primary text-primary-foreground px-8 py-4 text-sm font-bold uppercase tracking-widest hover:bg-primary/90 transition-colors"
 						>
-							<Lock className="h-4 w-4" />
-							Create a Room
+							<User className="h-4 w-4" />
+							Create Personal Room
 							<ArrowRight className="h-4 w-4 ml-1" />
 						</Link>
-						<a
-							href="https://github.com/dhruvkb/flop"
-							target="_blank"
-							rel="noopener noreferrer"
+						<Link
+							to="/send"
 							className="flex items-center gap-2 border border-border text-foreground px-8 py-4 text-sm font-bold uppercase tracking-widest hover:border-primary/60 transition-colors"
 						>
-							View Source
-						</a>
+							<Send className="h-4 w-4" />
+							One-Shot Send
+						</Link>
 					</div>
 					<div className="inline-flex items-center gap-2 border border-primary/10 bg-primary/10 px-3 py-1 text-xs font-medium uppercase tracking-widest text-secondary">
-						Create by yours truly:<span className="text-primary text-shadow-xl">Dhruv Kumar Koshta
-							</span>
+						Created by yours truly:
+						<span className="text-primary">Dhruv Kumar Koshta</span>
 					</div>
 				</div>
 			</section>
@@ -156,45 +166,46 @@ export function LandingPage() {
 			{/* Divider */}
 			<div className="border-t border-border" />
 
-			{/* How it works */}
+			{/* Two modes */}
 			<section className="px-6 py-16 max-w-3xl mx-auto w-full">
-				
 				<p className="text-xs uppercase tracking-widest text-muted-foreground font-medium mb-8 text-center">
-					How It Works
+					Two Ways to Share
 				</p>
-				<div className="grid grid-cols-1 sm:grid-cols-3 gap-0 border border-border">
-					{[
-						{
-							n: "01",
-							title: "Add Files",
-							desc: "Drop any number of files into the room. Set expiry and access rules.",
-						},
-						{
-							n: "02",
-							title: "Encrypt & Upload",
-							desc: "Files are encrypted in your browser. Only ciphertext hits our servers.",
-						},
-						{
-							n: "03",
-							title: "Share One Link",
-							desc: "Recipient opens the room link, selects files, downloads & decrypts instantly.",
-						},
-					].map((step, i) => (
-						<div
-							key={step.n}
-							className={`px-6 py-8 space-y-3 ${i > 0 ? "border-t sm:border-t-0 sm:border-l border-border" : ""}`}
+				<div className="grid grid-cols-1 sm:grid-cols-2 gap-0 border border-border">
+					<div className="px-6 py-8 space-y-3">
+						<User className="h-5 w-5 text-primary mb-3" />
+						<p className="text-sm font-bold uppercase tracking-widest text-foreground">
+							Personal Room
+						</p>
+						<p className="text-xs text-muted-foreground leading-relaxed">
+							Claim a permanent alias (e.g. <code className="text-primary">/u/dhruv</code>).
+							Password-protected uploads. Anyone with the link can download.
+							Files encrypted with AES-GCM-256, keys stored server-side.
+						</p>
+						<Link
+							to="/personal"
+							className="inline-flex items-center gap-1.5 text-xs text-primary uppercase tracking-wide font-medium hover:underline mt-2"
 						>
-							<p className="text-3xl font-extrabold text-primary/30 tabular-nums leading-none">
-								{step.n}
-							</p>
-							<p className="text-sm font-bold uppercase tracking-widest text-foreground">
-								{step.title}
-							</p>
-							<p className="text-xs text-muted-foreground leading-relaxed">
-								{step.desc}
-							</p>
-						</div>
-					))}
+							Create yours <ArrowRight className="h-3 w-3" />
+						</Link>
+					</div>
+					<div className="px-6 py-8 space-y-3 border-t sm:border-t-0 sm:border-l border-border">
+						<Send className="h-5 w-5 text-primary mb-3" />
+						<p className="text-sm font-bold uppercase tracking-widest text-foreground">
+							One-Shot Send
+						</p>
+						<p className="text-xs text-muted-foreground leading-relaxed">
+							Encrypt a file, upload to S3, share a link. The decryption key
+							lives only in the URL fragment — the server never sees it. Receiver
+							gets the file via WebRTC P2P or S3 fallback.
+						</p>
+						<Link
+							to="/send"
+							className="inline-flex items-center gap-1.5 text-xs text-primary uppercase tracking-wide font-medium hover:underline mt-2"
+						>
+							Send a file <ArrowRight className="h-3 w-3" />
+						</Link>
+					</div>
 				</div>
 			</section>
 
@@ -239,14 +250,12 @@ export function LandingPage() {
 				</span>
 				<span>No cookies. No accounts. No logs.</span>
 				<div className="flex items-center gap-4">
-					<a
-						href="https://www.buymeacoffee.com"
-						target="_blank"
-						rel="noopener noreferrer"
+					<Link
+						to="/personal"
 						className="text-primary hover:underline uppercase tracking-wide font-medium"
 					>
-						Buy me a coffee &rarr;
-					</a>
+						Personal Room &rarr;
+					</Link>
 					<Link
 						to="/send"
 						className="text-primary hover:underline uppercase tracking-wide font-medium"
