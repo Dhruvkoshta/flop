@@ -13,7 +13,7 @@
   "vars": {
     "AWS_REGION": "eu-north-1",
     "S3_BUCKET_NAME": "flop-files",
-    "FRONTEND_ORIGIN": "https://flop.dhruvkoshta.dev",
+    "FRONTEND_ORIGIN": ["https://flop.dhruvkoshta.dev","https://flop-xhg.pages.dev"],
     "MAX_FILE_SIZE": "104857600"
   },
 
