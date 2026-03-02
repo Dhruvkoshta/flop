@@ -9,6 +9,7 @@ import {
 	File as FileIcon,
 	Loader2,
 	Lock,
+	QrCode,
 	Send,
 	Shield,
 	Upload,
@@ -16,6 +17,7 @@ import {
 	X,
 } from "lucide-react";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
+import QRCode from "react-qr-code";
 import { Link } from "react-router-dom";
 import { useSendTransfer } from "@/hooks/useSendTransfer";
 import { cn, formatBytes } from "@/lib/utils";
@@ -40,6 +42,7 @@ export function SendPage() {
 	const [isDragging, setIsDragging] = useState(false);
 	const [sizeError, setSizeError] = useState<string | null>(null);
 	const [copied, setCopied] = useState(false);
+	const [showQr, setShowQr] = useState(false);
 
 	const inputRef = useRef<HTMLInputElement>(null);
 	const inputId = useId();
@@ -305,6 +308,29 @@ export function SendPage() {
 								<Clock className="h-3 w-3 shrink-0" />
 								<span>Expires in 24 hours</span>
 							</div>
+							<button
+								type="button"
+								onClick={() => setShowQr((v) => !v)}
+								className="flex items-center gap-2 border border-border bg-card px-3 py-2 text-xs uppercase tracking-widest text-muted-foreground hover:text-foreground hover:border-primary/60 transition-colors w-full"
+							>
+								<QrCode className="h-3.5 w-3.5 shrink-0" />
+								{showQr ? "Hide QR Code" : "Generate QR Code"}
+							</button>
+						</div>
+					)}
+
+					{/* QR code panel */}
+					{shareUrl && (isWaiting || isDone) && showQr && (
+						<div className="border border-border border-t-0 bg-card px-5 py-5 flex flex-col items-center gap-3">
+							<p className="text-xs uppercase tracking-widest text-muted-foreground font-medium self-start">
+								QR Code
+							</p>
+							<div className="bg-white p-4 inline-block">
+								<QRCode value={shareUrl} size={180} bgColor="#ffffff" fgColor="#000000" />
+							</div>
+							<p className="text-xs text-muted-foreground text-center">
+								Scan to open the share link
+							</p>
 						</div>
 					)}
 

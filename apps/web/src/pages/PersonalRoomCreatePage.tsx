@@ -6,11 +6,13 @@ import {
 	Eye,
 	EyeOff,
 	Loader2,
+	QrCode,
 	Shield,
 	User,
 } from "lucide-react";
 import { useId, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import QRCode from "react-qr-code";
 import { usePersonalRoomCreate } from "@/hooks/usePersonalRoom";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
@@ -32,6 +34,7 @@ export function PersonalRoomCreatePage() {
 	const [showPassword, setShowPassword] = useState(false);
 	const [expiresIn, setExpiresIn] = useState<24 | 168 | 720>(168);
 	const [validationError, setValidationError] = useState<string | null>(null);
+	const [showQr, setShowQr] = useState(false);
 
 	const aliasId = useId();
 	const labelId = useId();
@@ -143,7 +146,34 @@ export function PersonalRoomCreatePage() {
 									})}
 								</span>
 							</div>
+							<button
+								type="button"
+								onClick={() => setShowQr((v) => !v)}
+								className="flex items-center gap-2 border border-border bg-card px-3 py-2 text-xs uppercase tracking-widest text-muted-foreground hover:text-foreground hover:border-primary/60 transition-colors w-full"
+							>
+								<QrCode className="h-3.5 w-3.5 shrink-0" />
+								{showQr ? "Hide QR Code" : "Generate QR Code"}
+							</button>
 						</div>
+
+						{showQr && (
+							<div className="border border-border border-t-0 bg-card px-5 py-5 flex flex-col items-center gap-3">
+								<p className="text-xs uppercase tracking-widest text-muted-foreground font-medium self-start">
+									QR Code
+								</p>
+								<div className="bg-white p-4 inline-block">
+									<QRCode
+										value={`${window.location.origin}/u/${result.alias}`}
+										size={180}
+										bgColor="#ffffff"
+										fgColor="#000000"
+									/>
+								</div>
+								<p className="text-xs text-muted-foreground text-center">
+									Scan to open the room
+								</p>
+							</div>
+						)}
 
 						<div className="border border-border border-t-0 bg-card px-5 py-4 space-y-2">
 							<button

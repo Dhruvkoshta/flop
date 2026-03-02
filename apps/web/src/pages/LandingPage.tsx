@@ -13,13 +13,14 @@ import { Link } from "react-router-dom";
 import Blocks from "@/components/ui/blocks";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import CharacterCursor from "@/components/ui/CharacterCursor";
+import { FlopDashboard } from "@/components/dashboard/FlopDashboard";
 
 // Hoisted to module scope so references are stable across renders.
 // Inline literals here would create new array/Set objects every render,
 // causing CharacterCursor and Blocks to tear down and rebuild entirely.
-const CURSOR_CHARACTERS = ['f', 'l', 'o', 'p', '✦', '⊕', '⟡'];
+const CURSOR_CHARACTERS = ['d', 'h', 'r', 'u', 'v',];
 const CURSOR_COLORS = ['#6622CC', '#A755C2', '#B07C9E', '#D2A1B8', '#B59194'];
-const CURSOR_FONT = "bold 14px monospace";
+const CURSOR_FONT = "bold 10px monospace";
 
 const HERO_ACTIVE_DIVS: Record<number, Set<number>> = {
 	0: new Set([2, 4, 6]),
@@ -257,6 +258,17 @@ export function LandingPage() {
 						);
 					})}
 				</div>
+			</section>
+
+			{/* Divider */}
+			<div className="border-t border-border" />
+
+			{/* Dashboard / By the Numbers */}
+			<section className="px-6 py-16 max-w-3xl mx-auto w-full">
+				<p className="text-xs uppercase tracking-widest text-muted-foreground font-medium mb-8 text-center">
+					By the Numbers
+				</p>
+				<FlopDashboard />
 			</section>
 
 			{/* Divider */}
