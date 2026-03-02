@@ -11,6 +11,9 @@ import {
 import { useRef } from "react";
 import { Link } from "react-router-dom";
 import Blocks from "@/components/ui/blocks";
+import { ThemeToggle } from "@/components/ui/ThemeToggle";
+import CharacterCursor from "@/components/ui/CharacterCursor";
+
 
 const FEATURES = [
 	{
@@ -49,28 +52,35 @@ export function LandingPage() {
 	const heroRef = useRef<HTMLDivElement>(null);
 
 	return (
+		<>
+			<CharacterCursor
+				characters={['d', 'h', 'r', 'u', 'v',]}
+				colors={['#6622CC', '#A755C2', '#B07C9E', '#D2A1B8', '#B59194']}
+				font="bold 14px monospace"
+			/>
 		<div className="min-h-screen bg-background text-foreground flex flex-col">
 			{/* Nav */}
 			<header className="border-b border-border px-6 py-4 flex items-center justify-between">
 				<span className="text-xl font-bold tracking-widest uppercase">
 					flop
 				</span>
-				<div className="flex items-center gap-2">
-					<Link
-						to="/personal"
-						className="flex items-center gap-2 border border-border text-foreground px-4 py-2 text-xs font-bold uppercase tracking-widest hover:border-primary/60 transition-colors"
-					>
-						<User className="h-3.5 w-3.5" />
-						Personal Room
-					</Link>
-					<Link
-						to="/send"
-						className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 text-xs font-bold uppercase tracking-widest hover:bg-primary/90 transition-colors"
-					>
-						Send Files
-						<ArrowRight className="h-3.5 w-3.5" />
-					</Link>
-				</div>
+			<div className="flex items-center gap-2">
+				<Link
+					to="/personal"
+					className="flex items-center gap-2 border border-border text-foreground px-4 py-2 text-xs font-bold uppercase tracking-widest hover:border-primary/60 transition-colors"
+				>
+					<User className="h-3.5 w-3.5" />
+					Personal Room
+				</Link>
+				<Link
+					to="/send"
+					className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 text-xs font-bold uppercase tracking-widest hover:bg-primary/90 transition-colors"
+				>
+					Send Files
+					<ArrowRight className="h-3.5 w-3.5" />
+				</Link>
+				<ThemeToggle />
+			</div>
 			</header>
 
 			{/* Hero */}
@@ -265,5 +275,6 @@ export function LandingPage() {
 				</div>
 			</footer>
 		</div>
+		</>
 	);
 }

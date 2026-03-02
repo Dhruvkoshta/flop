@@ -4,6 +4,7 @@ import { PersonalRoomCreatePage } from "@/pages/PersonalRoomCreatePage";
 import { PersonalRoomPage } from "@/pages/PersonalRoomPage";
 import { SendPage } from "@/pages/SendPage";
 import { ReceivePage } from "@/pages/ReceivePage";
+import { useTheme } from "@/hooks/useTheme";
 
 function NotFound() {
 	return (
@@ -25,14 +26,19 @@ function NotFound() {
 }
 
 export default function App() {
+	// Initialize theme from localStorage / system preference
+	useTheme();
+
 	return (
-		<Routes>
-			<Route path="/" element={<LandingPage />} />
-			<Route path="/personal" element={<PersonalRoomCreatePage />} />
-			<Route path="/u/:alias" element={<PersonalRoomPage />} />
-			<Route path="/send" element={<SendPage />} />
-			<Route path="/r/:roomId" element={<ReceivePage />} />
-			<Route path="*" element={<NotFound />} />
-		</Routes>
+		<>
+			<Routes>
+				<Route path="/" element={<LandingPage />} />
+				<Route path="/personal" element={<PersonalRoomCreatePage />} />
+				<Route path="/u/:alias" element={<PersonalRoomPage />} />
+				<Route path="/send" element={<SendPage />} />
+				<Route path="/r/:roomId" element={<ReceivePage />} />
+				<Route path="*" element={<NotFound />} />
+			</Routes>
+		</>
 	);
 }

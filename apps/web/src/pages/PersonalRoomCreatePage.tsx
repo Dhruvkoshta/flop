@@ -13,6 +13,7 @@ import { useId, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { usePersonalRoomCreate } from "@/hooks/usePersonalRoom";
 import { cn } from "@/lib/utils";
+import { ThemeToggle } from "@/components/ui/ThemeToggle";
 
 const EXPIRY_OPTIONS: { value: 24 | 168 | 720; label: string }[] = [
 	{ value: 24, label: "24h" },
@@ -76,23 +77,26 @@ export function PersonalRoomCreatePage() {
 	if (isDone && result) {
 		return (
 			<div className="min-h-screen bg-background flex flex-col">
-				<header className="border-b border-border px-6 py-4 flex items-center justify-between">
-					<Link
-						to="/"
-						className="text-xl font-bold tracking-widest text-foreground uppercase"
-					>
-						flop
-					</Link>
-					<div className="flex items-center gap-1.5 text-xs text-muted-foreground uppercase tracking-wider">
+			<header className="border-b border-border px-6 py-4 flex items-center justify-between">
+				<Link
+					to="/"
+					className="text-xl font-bold tracking-widest text-foreground uppercase"
+				>
+					flop
+				</Link>
+				<div className="flex items-center gap-3 text-xs text-muted-foreground uppercase tracking-wider">
+					<div className="flex items-center gap-1.5">
 						<Shield className="h-3 w-3" />
 						AES-GCM-256
 					</div>
-				</header>
-				<main className="flex-1 flex flex-col items-center justify-center p-6">
-					<div className="w-full max-w-md space-y-0">
-						<div className="border border-border bg-card px-6 py-5 border-b-0">
-							<div className="flex items-center gap-3">
-								<Check className="h-5 w-5 text-secondary shrink-0" />
+					<ThemeToggle />
+				</div>
+			</header>
+			<main className="flex-1 flex flex-col items-center justify-center p-6">
+				<div className="w-full max-w-md space-y-0">
+					<div className="border border-border bg-card px-6 py-5 border-b-0">
+						<div className="flex items-center gap-3">
+							<Check className="h-5 w-5 text-secondary shrink-0" />
 								<div>
 									<h1 className="text-base font-bold uppercase tracking-widest text-foreground">
 										Room Created
@@ -159,18 +163,21 @@ export function PersonalRoomCreatePage() {
 
 	return (
 		<div className="min-h-screen bg-background flex flex-col">
-			<header className="border-b border-border px-6 py-4 flex items-center justify-between">
-				<Link
-					to="/"
-					className="text-xl font-bold tracking-widest text-foreground uppercase"
-				>
-					flop
-				</Link>
-				<div className="flex items-center gap-1.5 text-xs text-muted-foreground uppercase tracking-wider">
+		<header className="border-b border-border px-6 py-4 flex items-center justify-between">
+			<Link
+				to="/"
+				className="text-xl font-bold tracking-widest text-foreground uppercase"
+			>
+				flop
+			</Link>
+			<div className="flex items-center gap-3 text-xs text-muted-foreground uppercase tracking-wider">
+				<div className="flex items-center gap-1.5">
 					<Shield className="h-3 w-3" />
 					AES-GCM-256
 				</div>
-			</header>
+				<ThemeToggle />
+			</div>
+		</header>
 
 			<main className="flex-1 flex flex-col items-center justify-center p-6">
 				<div className="w-full max-w-md space-y-0">

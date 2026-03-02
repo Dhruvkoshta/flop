@@ -19,6 +19,7 @@ import { useCallback, useId, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useSendTransfer } from "@/hooks/useSendTransfer";
 import { cn, formatBytes } from "@/lib/utils";
+import { ThemeToggle } from "@/components/ui/ThemeToggle";
 
 const MAX_FILE_SIZE = 100 * 1024 * 1024;
 
@@ -96,18 +97,21 @@ export function SendPage() {
 
 	return (
 		<div className="min-h-screen bg-background flex flex-col">
-			<header className="border-b border-border px-6 py-4 flex items-center justify-between">
-				<Link
-					to="/"
-					className="text-xl font-bold tracking-widest text-foreground uppercase"
-				>
-					flop
-				</Link>
-				<div className="flex items-center gap-1.5 text-xs text-muted-foreground uppercase tracking-wider">
+		<header className="border-b border-border px-6 py-4 flex items-center justify-between">
+			<Link
+				to="/"
+				className="text-xl font-bold tracking-widest text-foreground uppercase"
+			>
+				flop
+			</Link>
+			<div className="flex items-center gap-3 text-xs text-muted-foreground uppercase tracking-wider">
+				<div className="flex items-center gap-1.5">
 					<Shield className="h-3 w-3" />
 					AES-GCM-256
 				</div>
-			</header>
+				<ThemeToggle />
+			</div>
+		</header>
 
 			<main className="flex-1 flex flex-col items-center justify-center p-6">
 				<div className="w-full max-w-xl space-y-0">
