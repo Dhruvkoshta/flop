@@ -255,25 +255,31 @@ export class RoomDO extends DurableObject<Env> {
       .toArray()[0];
   }
 
-  /** Send a message to all connected peers except the sender */
+  /** Send a message to all connected peers except the sender.
+   *
+   * Uses this.ctx.getWebSockets() (Hibernation API) instead of the in-memory
+   * this.peers map so that signals are delivered even after the DO hibernates
+   * between messages (this.peers is cleared on hibernation wake-up).
+   */
   private broadcast(exclude: WebSocket, message: string): void {
-    for (const [ws] of this.peers) {
-      if (ws !== exclude && ws.readyState === WebSocket.OPEN) {
+    for (const ws of this.ctx.getWebSockets()) {
+      if (ws !== exclude) {
         try {
           ws.send(message);
         } catch {
-          // stale connection — clean up
-          this.peers.delete(ws);
+          // stale — ignore
         }
       }
     }
   }
 
   private handleDisconnect(ws: WebSocket): void {
+    // Prefer in-memory meta; fall back to hibernation tags when peers map is empty
     const meta = this.peers.get(ws);
+    const role: PeerRole = meta?.role ?? ((this.ctx.getTags(ws)[0] ?? "receiver") as PeerRole);
     this.peers.delete(ws);
 
-    if (meta?.role === "sender") {
+    if (role === "sender") {
       // Mark sender offline in SQLite so late-joining receivers fall back to S3
       this.ctx.storage.sql.exec("UPDATE room SET sender_online = 0");
       // Notify all receivers

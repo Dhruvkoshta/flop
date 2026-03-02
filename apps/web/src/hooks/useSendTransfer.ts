@@ -354,14 +354,15 @@ export function useReceiveTransfer(): UseReceiveTransferReturn {
 							return;
 						}
 
-						if (msg.type === "signal") {
-							await receiver.handleSignal(msg.payload);
-						} else if (msg.type === "sender_offline") {
-							rejectP2P(new Error("Sender is offline"));
-						} else if (msg.type === "joined" && !msg.senderOnline) {
-							// Sender not present — skip to fallback
-							rejectP2P(new Error("Sender not online"));
-						}
+					if (msg.type === "signal") {
+						await receiver.handleSignal(msg.payload);
+					} else if (msg.type === "sender_offline") {
+						rejectP2P(new Error("Sender is offline"));
+					} else if (msg.type === "joined") {
+						// If sender isn't online yet, just wait — the DO will send
+						// peer_joined when the sender connects. The 20s timeout below
+						// handles the "sender never shows up" case.
+					}
 					};
 
 					ws.onerror = () => rejectP2P(new Error("WebSocket error"));
