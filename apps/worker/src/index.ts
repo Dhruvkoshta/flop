@@ -21,8 +21,11 @@ app.use(
   cors({
     origin: (origin, c) => {
       const allowed = c.env.FRONTEND_ORIGIN;
-      if (!origin || origin === allowed) return origin ?? "";
-      return "";
+      if (!origin) return "";
+      if (Array.isArray(allowed)) {
+        return allowed.includes(origin) ? origin : "";
+      }
+      return origin === allowed ? origin : "";
     },
     allowHeaders: ["Content-Type", "Authorization"],
     allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
