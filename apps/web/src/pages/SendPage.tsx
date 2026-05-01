@@ -38,7 +38,7 @@ const PHASE_LABEL: Record<string, string> = {
 export function SendPage() {
 	const { phase, shareUrl, progress, error, send, reset } = useSendTransfer();
 
-	const [selectedFile, setSelectedFile] = useState<File | null>(null);
+	const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
 	const [isDragging, setIsDragging] = useState(false);
 	const [sizeError, setSizeError] = useState<string | null>(null);
 	const [copied, setCopied] = useState(false);
@@ -62,13 +62,18 @@ export function SendPage() {
 	const isDone = phase === "done";
 	const isError = phase === "error";
 
-	const handleFile = useCallback((file: File) => {
+	const handleFiles = useCallback((files: FileList | File[]) => {
 		setSizeError(null);
-		if (file.size > MAX_FILE_SIZE) {
-			setSizeError(`${file.name} exceeds the 100 MB limit`);
-			return;
+		const validFiles: File[] = [];
+		for (let i = 0; i < files.length; i++) {
+			const file = files[i];
+			if (file.size > MAX_FILE_SIZE) {
+				setSizeError(`${file.name} exceeds the 100 MB limit`);
+				continue;
+			}
+			validFiles.push(file);
 		}
-		setSelectedFile(file);
+		setSelectedFiles(prev => [...prev, ...validFiles]);
 	}, []);
 
 	const handleDrop = useCallback(
@@ -76,20 +81,18 @@ export function SendPage() {
 			e.preventDefault();
 			setIsDragging(false);
 			if (!isIdle) return;
-			const file = e.dataTransfer.files[0];
-			if (file) handleFile(file);
+			if (e.dataTransfer.files.length) handleFiles(e.dataTransfer.files);
 		},
-		[isIdle, handleFile],
+		[isIdle, handleFiles],
 	);
 
 	const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-		const file = e.target.files?.[0];
-		if (file) handleFile(file);
+		if (e.target.files?.length) handleFiles(e.target.files);
 	};
 
 	const handleSend = async () => {
-		if (!selectedFile) return;
-		await send(selectedFile);
+		if (selectedFiles.length === 0) return;
+		await send(selectedFiles);
 	};
 
 	const copyLink = async () => {
@@ -102,7 +105,7 @@ export function SendPage() {
 
 	const handleReset = () => {
 		reset();
-		setSelectedFile(null);
+		setSelectedFiles([]);
 		setSizeError(null);
 		setCopied(false);
 	};
@@ -151,7 +154,7 @@ export function SendPage() {
 					</div>
 
 					{/* Drop zone — only when idle */}
-					{isIdle && !selectedFile && (
+					{isIdle && selectedFiles.length === 0 && (
 						<label
 							htmlFor={inputId}
 							className={cn(
@@ -170,7 +173,7 @@ export function SendPage() {
 							<input
 								ref={inputRef}
 								id={inputId}
-								type="file"
+								type="file" multiple
 								className="sr-only"
 								onChange={handleInputChange}
 							/>
@@ -202,56 +205,64 @@ export function SendPage() {
 									</p>
 								</div>
 								<p className="text-xs text-muted-foreground">
-									Max 100 MB · One file per send
+									Max 100 MB · Multiple files supported
 								</p>
 							</div>
 						</label>
 					)}
 
-					{/* Selected file */}
-					{selectedFile && (
-						<div className="border border-border border-t-0 bg-card">
-							<div className="flex items-center gap-3 px-3 py-2.5">
-								<div className="bg-primary/10 p-1.5 shrink-0">
-									<FileIcon className="h-4 w-4 text-primary" />
+					{/* Selected files */}
+					{selectedFiles.length > 0 && (
+						<div className="border border-border border-t-0 bg-card divide-y divide-border">
+							{selectedFiles.map((file, i) => (
+								<div key={`${file.name}-${i}`} className="flex items-center gap-3 px-3 py-2.5">
+									<div className="bg-primary/10 p-1.5 shrink-0">
+										<FileIcon className="h-4 w-4 text-primary" />
+									</div>
+									<div className="flex-1 min-w-0">
+										<p className="text-sm font-medium truncate text-foreground">
+											{file.name}
+										</p>
+										<p className="text-xs text-muted-foreground">
+											{formatBytes(file.size)}
+										</p>
+									</div>
+									<div className="shrink-0">
+										{isIdle && (
+											<button
+												type="button"
+												onClick={() => setSelectedFiles(prev => prev.filter((_, idx) => idx !== i))}
+												className="text-muted-foreground hover:text-foreground transition-colors"
+											>
+												<X className="h-4 w-4" />
+											</button>
+										)}
+										{isActive && !isWaiting && (
+											<Loader2 className="h-4 w-4 text-primary animate-spin" />
+										)}
+										{(isDone || isWaiting) && (
+											<Check className="h-4 w-4 text-secondary" />
+										)}
+										{isError && (
+											<AlertTriangle className="h-4 w-4 text-destructive" />
+										)}
+									</div>
 								</div>
-								<div className="flex-1 min-w-0">
-									<p className="text-sm font-medium truncate text-foreground">
-										{selectedFile.name}
-									</p>
-									<p className="text-xs text-muted-foreground">
-										{formatBytes(selectedFile.size)}
-									</p>
-									{isActive && phase !== "waiting_for_peer" && (
-										<div className="mt-1 h-0.5 bg-border w-full overflow-hidden">
-											<div
-												className="h-full bg-primary transition-all duration-200"
-												style={{ width: `${progress.percent}%` }}
-											/>
-										</div>
-									)}
+							))}
+							{isActive && phase !== "waiting_for_peer" && (
+								<div className="px-3 py-2.5 bg-muted/20">
+									<div className="flex justify-between text-xs text-muted-foreground mb-1">
+										<span>Total Progress</span>
+										<span>{progress.percent}%</span>
+									</div>
+									<div className="h-1 bg-border w-full overflow-hidden">
+										<div
+											className="h-full bg-primary transition-all duration-200"
+											style={{ width: `${progress.percent}%` }}
+										/>
+									</div>
 								</div>
-								<div className="shrink-0">
-									{isIdle && (
-										<button
-											type="button"
-											onClick={() => setSelectedFile(null)}
-											className="text-muted-foreground hover:text-foreground transition-colors"
-										>
-											<X className="h-4 w-4" />
-										</button>
-									)}
-									{isActive && !isWaiting && (
-										<Loader2 className="h-4 w-4 text-primary animate-spin" />
-									)}
-									{(isDone || isWaiting) && (
-										<Check className="h-4 w-4 text-secondary" />
-									)}
-									{isError && (
-										<AlertTriangle className="h-4 w-4 text-destructive" />
-									)}
-								</div>
-							</div>
+							)}
 						</div>
 					)}
 
@@ -378,7 +389,7 @@ export function SendPage() {
 
 					{/* Actions */}
 					<div className="border border-border border-t-0 bg-card px-5 py-4">
-						{isIdle && selectedFile && (
+						{isIdle && selectedFiles.length > 0 && (
 							<button
 								type="button"
 								onClick={handleSend}
@@ -389,7 +400,7 @@ export function SendPage() {
 								<ChevronRight className="h-4 w-4 ml-auto" />
 							</button>
 						)}
-						{isIdle && !selectedFile && (
+						{isIdle && selectedFiles.length === 0 && (
 							<p className="text-xs text-muted-foreground text-center uppercase tracking-wide py-1">
 								Select a file above to continue
 							</p>
