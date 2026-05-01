@@ -27,7 +27,7 @@ const PHASE_LABEL: Record<string, string> = {
 
 export function ReceivePage() {
 	const { roomId } = useParams<{ roomId: string }>();
-	const { phase, filename, progress, error, receive, reset } =
+	const { phase, filenames, progress, error, receive, reset } =
 		useReceiveTransfer();
 
 	useEffect(() => {
@@ -87,7 +87,7 @@ export function ReceivePage() {
 					</div>
 
 					{/* File info */}
-					{filename && (
+					{filenames.length > 0 && (
 						<div className="border border-border border-t-0 bg-card">
 							<div className="flex items-center gap-3 px-3 py-2.5">
 								<div className="bg-primary/10 p-1.5 shrink-0">
@@ -95,7 +95,7 @@ export function ReceivePage() {
 								</div>
 								<div className="flex-1 min-w-0">
 									<p className="text-sm font-medium truncate text-foreground">
-										{filename}
+										{filenames.join(", ")}
 									</p>
 									{(isReceiving || isDecrypting) && (
 										<div className="mt-1 h-0.5 bg-border w-full overflow-hidden">
@@ -163,7 +163,7 @@ export function ReceivePage() {
 									File Saved
 								</p>
 								<p className="text-xs text-muted-foreground mt-1">
-									{filename} has been decrypted and saved to your downloads.
+									{filenames.join(", ")} has been decrypted and saved to your downloads.
 								</p>
 							</div>
 							<div className="flex gap-3 mt-2">

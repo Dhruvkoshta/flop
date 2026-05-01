@@ -34,7 +34,7 @@ export interface CreatePersonalRoomOptions {
 	alias: string;
 	label?: string;
 	password: string;
-	expiresIn: 24 | 168 | 720;
+	expiresIn: 24 | 168 | 720 | 1440;
 }
 
 export interface UsePersonalRoomCreateReturn {

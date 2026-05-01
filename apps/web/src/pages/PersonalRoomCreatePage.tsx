@@ -17,10 +17,11 @@ import { usePersonalRoomCreate } from "@/hooks/usePersonalRoom";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
 
-const EXPIRY_OPTIONS: { value: 24 | 168 | 720; label: string }[] = [
+const EXPIRY_OPTIONS: { value: 24 | 168 | 720 | 1440; label: string }[] = [
 	{ value: 24, label: "24h" },
 	{ value: 168, label: "7d" },
 	{ value: 720, label: "30d" },
+	{ value: 1440, label: "60d" },
 ];
 
 export function PersonalRoomCreatePage() {
@@ -32,7 +33,7 @@ export function PersonalRoomCreatePage() {
 	const [password, setPassword] = useState("");
 	const [confirmPassword, setConfirmPassword] = useState("");
 	const [showPassword, setShowPassword] = useState(false);
-	const [expiresIn, setExpiresIn] = useState<24 | 168 | 720>(168);
+	const [expiresIn, setExpiresIn] = useState<24 | 168 | 720 | 1440>(168);
 	const [validationError, setValidationError] = useState<string | null>(null);
 	const [showQr, setShowQr] = useState(false);
 

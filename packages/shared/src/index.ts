@@ -16,7 +16,7 @@ export interface CreatePersonalRoomRequest {
   alias: string;           // e.g. "dhruv" → /u/dhruv
   label?: string;          // display title shown on the room page
   passwordHash: string;    // SHA-256 hex of the owner password (required)
-  expiresIn: number;       // hours: 24 | 168 | 720
+  expiresIn: number;       // hours: 24 | 168 | 720 | 1440
 }
 
 export interface CreatePersonalRoomResponse {

@@ -40,6 +40,7 @@ const createPersonalSchema = z.object({
     z.literal(24),
     z.literal(168),  // 7 days
     z.literal(720),  // 30 days
+    z.literal(1440), // 60 days
   ]).default(24),
 });
 
@@ -50,13 +51,18 @@ roomRouter.post("/personal", zValidator("json", createPersonalSchema), async (c)
 
   // Check alias availability
   const existing = await db
-    .select({ alias: schema.aliases.alias })
+    .select({ alias: schema.aliases.alias, expiresAt: schema.aliases.expiresAt })
     .from(schema.aliases)
     .where(eq(schema.aliases.alias, normalAlias))
     .get();
 
   if (existing) {
-    return c.json({ error: "Username already taken", code: "ALIAS_TAKEN" }, 409);
+    if (existing.expiresAt !== null && existing.expiresAt < new Date()) {
+      // Alias is expired, allow overwrite by deleting the old alias
+      await db.delete(schema.aliases).where(eq(schema.aliases.alias, normalAlias));
+    } else {
+      return c.json({ error: "Username already taken", code: "ALIAS_TAKEN" }, 409);
+    }
   }
 
   const roomId = nanoid(21);

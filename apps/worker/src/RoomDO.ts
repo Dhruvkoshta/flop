@@ -160,7 +160,7 @@ export class RoomDO extends DurableObject<Env> {
     switch (msg.type) {
       case "signal": {
         // Relay the WebRTC signal to the other peer(s)
-        const payload: ServerMessage = { type: "signal", payload: msg.payload };
+        const payload: ServerMessage = { type: "signal", payload: msg.payload, fileId: msg.fileId };
         this.broadcast(ws, JSON.stringify(payload));
         break;
       }

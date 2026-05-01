@@ -51,7 +51,7 @@ export interface UseSendTransferReturn {
 	shareUrl: string | null;
 	progress: TransferProgress;
 	error: string | null;
-	send: (file: File) => Promise<void>;
+	send: (files: File[]) => Promise<void>;
 	reset: () => void;
 }
 
@@ -66,22 +66,22 @@ export function useSendTransfer(): UseSendTransferReturn {
 	const [error, setError] = useState<string | null>(null);
 
 	const wsRef = useRef<WebSocket | null>(null);
-	const senderRef = useRef<{ handleSignal: (p: RTCSignalPayload) => Promise<void>; close: () => void } | null>(null);
+	const senderRefs = useRef<Map<string, { handleSignal: (p: RTCSignalPayload) => Promise<void>; close: () => void }>>(new Map());
 	const doneRef = useRef(false);
 
 	// Cleanup on unmount: close any live WebSocket / sender peer connection
 	useEffect(() => {
 		return () => {
 			wsRef.current?.close();
-			senderRef.current?.close();
+			senderRefs.current.forEach(s => s.close());
 		};
 	}, []);
 
 	const reset = useCallback(() => {
 		wsRef.current?.close();
-		senderRef.current?.close();
+		senderRefs.current.forEach(s => s.close());
+		senderRefs.current.clear();
 		wsRef.current = null;
-		senderRef.current = null;
 		doneRef.current = false;
 		setPhase("idle");
 		setShareUrl(null);
@@ -89,120 +89,113 @@ export function useSendTransfer(): UseSendTransferReturn {
 		setError(null);
 	}, []);
 
-	const send = useCallback(async (file: File) => {
+	const send = useCallback(async (files: File[]) => {
+		if (!files.length) return;
 		try {
 			setPhase("encrypting");
 			setError(null);
 
-			// Step 1: Generate key + encrypt
-			const key = await generateKey();
-			const keyBase64 = await exportKey(key);
-			const { encryptedBlob, ivBase64 } = await encryptFile(file, key);
-
-			// Step 2: Create send room
+			// Step 1 & 2: Create send room
 			const createRes = await fetch("/api/rooms/send", {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({ expiresIn: 24 }),
 			});
 			if (!createRes.ok) {
-				const err = await createRes
-					.json()
-					.catch(() => ({ error: "Room creation failed" }));
+				const err = await createRes.json().catch(() => ({ error: "Room creation failed" }));
 				throw new Error((err as { error: string }).error);
 			}
 			const { roomId } = (await createRes.json()) as CreateSendRoomResponse;
 
-			// Step 3: Register file (include key — stored server-side)
-			const addRes = await fetch(`/api/rooms/${roomId}/files/send`, {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({
-					name: file.name,
-					size: file.size,
-					mimeType: file.type || "application/octet-stream",
-					iv: ivBase64,
-					keyBase64,
-				}),
-			});
-			if (!addRes.ok) {
-				const err = await addRes
-					.json()
-					.catch(() => ({ error: "File registration failed" }));
-				throw new Error((err as { error: string }).error);
+			// Prepare files
+			const fileRecords: { fileId: string; putUrl: string; encryptedBlob: ArrayBuffer; name: string; size: number }[] = [];
+			let totalUploadBytes = 0;
+			
+			for (const file of files) {
+				const key = await generateKey();
+				const keyBase64 = await exportKey(key);
+				const { encryptedBlob, ivBase64 } = await encryptFile(file, key);
+
+				const addRes = await fetch(`/api/rooms/${roomId}/files/send`, {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({
+						name: file.name,
+						size: file.size,
+						mimeType: file.type || "application/octet-stream",
+						iv: ivBase64,
+						keyBase64,
+					}),
+				});
+				if (!addRes.ok) throw new Error("File registration failed");
+				const { fileId, putUrl } = (await addRes.json()) as AddSendFileResponse;
+				
+				fileRecords.push({ fileId, putUrl, encryptedBlob, name: file.name, size: encryptedBlob.byteLength });
+				totalUploadBytes += encryptedBlob.byteLength;
 			}
-			const { fileId, putUrl } = (await addRes.json()) as AddSendFileResponse;
 
-		// Step 4: Upload to S3
-		setPhase("uploading");
-		await uploadWithProgress(putUrl, encryptedBlob, (bytes, total) => {
-			const percent = total > 0 ? Math.round((bytes / total) * 100) : 0;
-			setProgress((prev) => {
-				if (prev.percent === percent) return prev;
-				return { bytes, total, percent };
+			// Step 4: Upload to S3
+			setPhase("uploading");
+			let uploadedBytes = 0;
+			const uploadPromises = fileRecords.map(async (record) => {
+				let lastFileUploaded = 0;
+				await uploadWithProgress(record.putUrl, record.encryptedBlob, (bytes, _total) => {
+					uploadedBytes += (bytes - lastFileUploaded);
+					lastFileUploaded = bytes;
+					setProgress({ bytes: uploadedBytes, total: totalUploadBytes, percent: Math.round((uploadedBytes / totalUploadBytes) * 100) });
+				});
 			});
-		});
+			await Promise.all(uploadPromises);
 
-			// Build share URL — no fragment needed, key is stored server-side
 			const url = `${window.location.origin}/r/${roomId}`;
 			setShareUrl(url);
 
-			// Step 5: Open WebSocket, wait for receiver
 			setPhase("waiting_for_peer");
 
 			const ws = new WebSocket(`${WS_BASE}/api/room/${roomId}/ws?role=sender`);
 			wsRef.current = ws;
 
 			ws.onopen = () => {
-				const joinMsg: ClientMessage = {
-					type: "join",
-					role: "sender",
-					fileId,
-				};
+				// We join using the first fileId for compatibility, RoomDO ignores it anyway
+				const joinMsg: ClientMessage = { type: "join", role: "sender", fileId: fileRecords[0].fileId };
 				ws.send(JSON.stringify(joinMsg));
 			};
 
 			ws.onmessage = async (event) => {
 				let msg: ServerMessage;
-				try {
-					msg = JSON.parse(event.data as string) as ServerMessage;
-				} catch {
-					return;
-				}
+				try { msg = JSON.parse(event.data as string) as ServerMessage; } catch { return; }
 
 				if (msg.type === "peer_joined") {
-					// Receiver connected — attempt P2P
 					setPhase("p2p_connecting");
-
-					const sender = setupSender(
-						encryptedBlob,
-						file.name,
-						(payload) => {
-							const sigMsg: ClientMessage = { type: "signal", payload, fileId };
-							ws.send(JSON.stringify(sigMsg));
-						},
-						(bytes, total) => {
-							setProgress({
-								bytes,
-								total,
-								percent: total > 0 ? Math.round((bytes / total) * 100) : 0,
-							});
-							setPhase("p2p_transferring");
-						},
-						(state) => {
-							if (state === "connected") setPhase("p2p_transferring");
-							if (state === "failed" || state === "disconnected") {
-								// P2P failed — receiver will fall back to S3; we're done
-								doneRef.current = true;
-								setPhase("done");
+					let p2pBytes = 0;
+					
+					for (const record of fileRecords) {
+						let lastSent = 0;
+						const sender = setupSender(
+							record.encryptedBlob,
+							record.name,
+							(payload) => {
+								const sigMsg: ClientMessage = { type: "signal", payload, fileId: record.fileId };
+								ws.send(JSON.stringify(sigMsg));
+							},
+							(bytes, _total) => {
+								p2pBytes += (bytes - lastSent);
+								lastSent = bytes;
+								setProgress({ bytes: p2pBytes, total: totalUploadBytes, percent: Math.round((p2pBytes / totalUploadBytes) * 100) });
+								setPhase("p2p_transferring");
+							},
+							(state) => {
+								if (state === "connected") setPhase("p2p_transferring");
+								if (state === "failed" || state === "disconnected") {
+									doneRef.current = true;
+									setPhase("done");
+								}
 							}
-						},
-					);
-					senderRef.current = sender;
-				} else if (msg.type === "signal") {
-					await senderRef.current?.handleSignal(msg.payload);
-				} else if (msg.type === "joined") {
-					// Our own join confirmed
+						);
+						senderRefs.current.set(record.fileId, sender);
+					}
+				} else if (msg.type === "signal" && msg.fileId) {
+					await senderRefs.current.get(msg.fileId)?.handleSignal(msg.payload);
 				}
 			};
 
@@ -231,7 +224,7 @@ export function useSendTransfer(): UseSendTransferReturn {
 
 export interface UseReceiveTransferReturn {
 	phase: ReceivePhase;
-	filename: string | null;
+	filenames: string[];
 	progress: TransferProgress;
 	error: string | null;
 	receive: (roomId: string) => Promise<void>;
@@ -240,7 +233,7 @@ export interface UseReceiveTransferReturn {
 
 export function useReceiveTransfer(): UseReceiveTransferReturn {
 	const [phase, setPhase] = useState<ReceivePhase>("idle");
-	const [filename, setFilename] = useState<string | null>(null);
+	const [filenames, setFilenames] = useState<string[]>([]);
 	const [progress, setProgress] = useState<TransferProgress>({
 		bytes: 0,
 		total: 0,
@@ -249,19 +242,19 @@ export function useReceiveTransfer(): UseReceiveTransferReturn {
 	const [error, setError] = useState<string | null>(null);
 
 	const wsRef = useRef<WebSocket | null>(null);
-	const receiverRef = useRef<{
+	const receiverRefs = useRef<Map<string, {
 		handleSignal: (p: RTCSignalPayload) => Promise<void>;
 		result: Promise<{ blob: ArrayBuffer; filename: string }>;
 		close: () => void;
-	} | null>(null);
+	}>>(new Map());
 
 	const reset = useCallback(() => {
 		wsRef.current?.close();
-		receiverRef.current?.close();
+		receiverRefs.current.forEach(r => r.close());
+		receiverRefs.current.clear();
 		wsRef.current = null;
-		receiverRef.current = null;
 		setPhase("idle");
-		setFilename(null);
+		setFilenames([]);
 		setProgress({ bytes: 0, total: 0, percent: 0 });
 		setError(null);
 	}, []);
@@ -271,134 +264,105 @@ export function useReceiveTransfer(): UseReceiveTransferReturn {
 			setPhase("connecting");
 			setError(null);
 
-			// Fetch room metadata — key is stored server-side
 			const roomRes = await fetch(`/api/rooms/${roomId}/send`);
-			if (!roomRes.ok) {
-				const err = await roomRes
-					.json()
-					.catch(() => ({ error: "Room not found" }));
-				throw new Error((err as { error: string }).error);
-			}
+			if (!roomRes.ok) throw new Error("Room not found");
 			const roomData = (await roomRes.json()) as SendRoomResponse;
-			const roomFile = roomData.files[0];
-			if (!roomFile) throw new Error("No file in room");
+			if (!roomData.files || roomData.files.length === 0) throw new Error("No files in room");
 
-			setFilename(roomFile.name);
+			setFilenames(roomData.files.map((f) => f.name));
+			
+			const keys = new Map<string, CryptoKey>();
+			for (const f of roomData.files) {
+				keys.set(f.fileId, await importKey(f.keyBase64));
+			}
 
-			// Import the key from the server response
-			const key = await importKey(roomFile.keyBase64);
-
-			// Try WebRTC P2P first
 			setPhase("p2p_connecting");
-
 			let p2pSucceeded = false;
+			let totalBytes = roomData.files.reduce((acc, f) => acc + f.size, 0);
 
 			try {
 				await new Promise<void>((resolveP2P, rejectP2P) => {
 					const ws = new WebSocket(`${WS_BASE}/api/room/${roomId}/ws?role=receiver`);
 					wsRef.current = ws;
 
-					const receiver = setupReceiver(
-						(payload) => {
-							const sigMsg: ClientMessage = {
-								type: "signal",
-								payload,
-								fileId: roomFile.fileId,
-							};
-							ws.send(JSON.stringify(sigMsg));
-						},
-						(bytes, total) => {
-							const percent = total > 0 ? Math.round((bytes / total) * 100) : 0;
-							setProgress((prev) => {
-								if (prev.percent === percent) return prev;
-								return { bytes, total, percent };
-							});
-							setPhase("p2p_receiving");
-						},
-						(state) => {
-							if (state === "failed" || state === "disconnected") {
-								rejectP2P(new Error(`WebRTC ${state}`));
-							}
-						},
-					);
-					receiverRef.current = receiver;
+					let p2pReceivedBytes = 0;
 
-					// Handle P2P result
-					receiver.result
-						.then(async ({ blob, filename: fname }) => {
-							clearTimeout(p2pTimeoutId);
-							setPhase("decrypting");
-							const plaintext = await decryptBlob(blob, key);
-							downloadBuffer(plaintext, fname, roomFile.mimeType);
-							p2pSucceeded = true;
-							setPhase("done");
-							ws.close();
-							resolveP2P();
-						})
-						.catch(rejectP2P);
+					for (const roomFile of roomData.files) {
+						let fileReceivedBytes = 0;
+						const receiver = setupReceiver(
+							(payload) => {
+								const sigMsg: ClientMessage = { type: "signal", payload, fileId: roomFile.fileId };
+								ws.send(JSON.stringify(sigMsg));
+							},
+							(bytes, _total) => {
+								p2pReceivedBytes += (bytes - fileReceivedBytes);
+								fileReceivedBytes = bytes;
+								setProgress({ bytes: p2pReceivedBytes, total: totalBytes, percent: totalBytes > 0 ? Math.round((p2pReceivedBytes / totalBytes) * 100) : 0 });
+								setPhase("p2p_receiving");
+							},
+							(state) => {
+								if (state === "failed" || state === "disconnected") rejectP2P(new Error(`WebRTC ${state}`));
+							}
+						);
+						receiverRefs.current.set(roomFile.fileId, receiver);
+					}
+
+					Promise.all(Array.from(receiverRefs.current.entries()).map(async ([fileId, receiver]) => {
+						const { blob, filename: fname } = await receiver.result;
+						const file = roomData.files.find(f => f.fileId === fileId)!;
+						const plaintext = await decryptBlob(blob, keys.get(fileId)!);
+						downloadBuffer(plaintext, fname, file.mimeType);
+					})).then(() => {
+						clearTimeout(p2pTimeoutId);
+						p2pSucceeded = true;
+						setPhase("done");
+						ws.close();
+						resolveP2P();
+					}).catch(rejectP2P);
 
 					ws.onopen = () => {
-						const joinMsg: ClientMessage = {
-							type: "join",
-							role: "receiver",
-							fileId: roomFile.fileId,
-						};
+						const joinMsg: ClientMessage = { type: "join", role: "receiver", fileId: roomData.files[0].fileId };
 						ws.send(JSON.stringify(joinMsg));
 					};
 
 					ws.onmessage = async (event) => {
 						let msg: ServerMessage;
-						try {
-							msg = JSON.parse(event.data as string) as ServerMessage;
-						} catch {
-							return;
+						try { msg = JSON.parse(event.data as string) as ServerMessage; } catch { return; }
+						if (msg.type === "signal" && msg.fileId) {
+							await receiverRefs.current.get(msg.fileId)?.handleSignal(msg.payload);
+						} else if (msg.type === "sender_offline") {
+							rejectP2P(new Error("Sender is offline"));
 						}
-
-					if (msg.type === "signal") {
-						await receiver.handleSignal(msg.payload);
-					} else if (msg.type === "sender_offline") {
-						rejectP2P(new Error("Sender is offline"));
-					} else if (msg.type === "joined") {
-						// If sender isn't online yet, just wait — the DO will send
-						// peer_joined when the sender connects. The 20s timeout below
-						// handles the "sender never shows up" case.
-					}
 					};
 
 					ws.onerror = () => rejectP2P(new Error("WebSocket error"));
-
-					// Timeout: if no progress after 20s, fall back
 					const p2pTimeoutId = setTimeout(() => {
-						if (!p2pSucceeded) {
-							rejectP2P(new Error("P2P timeout"));
-						}
+						if (!p2pSucceeded) rejectP2P(new Error("P2P timeout"));
 					}, 20_000);
 				});
-			} catch {
-				// P2P failed — fall back to S3
+			} catch (err) {
 				wsRef.current?.close();
-				receiverRef.current?.close();
+				receiverRefs.current.forEach(r => r.close());
+				receiverRefs.current.clear();
 				wsRef.current = null;
-				receiverRef.current = null;
-
-				if (p2pSucceeded) return; // Already done
+				
+				if (p2pSucceeded) return;
 
 				setPhase("fallback_downloading");
-				setProgress({ bytes: 0, total: roomFile.size, percent: 0 });
+				setProgress({ bytes: 0, total: totalBytes, percent: 0 });
 
-				const blobRes = await fetch(roomFile.getUrl);
-				if (!blobRes.ok) throw new Error("S3 download failed");
+				let s3ReceivedBytes = 0;
+				for (const roomFile of roomData.files) {
+					const blobRes = await fetch(roomFile.getUrl);
+					if (!blobRes.ok) throw new Error("S3 download failed");
+					const encryptedBlob = await blobRes.arrayBuffer();
+					
+					s3ReceivedBytes += encryptedBlob.byteLength;
+					setProgress({ bytes: s3ReceivedBytes, total: totalBytes, percent: Math.round((s3ReceivedBytes / totalBytes) * 100) });
 
-				const encryptedBlob = await blobRes.arrayBuffer();
-				setProgress({
-					bytes: encryptedBlob.byteLength,
-					total: encryptedBlob.byteLength,
-					percent: 100,
-				});
-
-				setPhase("decrypting");
-				const plaintext = await decryptBlob(encryptedBlob, key);
-				downloadBuffer(plaintext, roomFile.name, roomFile.mimeType);
+					const plaintext = await decryptBlob(encryptedBlob, keys.get(roomFile.fileId)!);
+					downloadBuffer(plaintext, roomFile.name, roomFile.mimeType);
+				}
 				setPhase("done");
 			}
 		} catch (err) {
@@ -407,7 +371,7 @@ export function useReceiveTransfer(): UseReceiveTransferReturn {
 		}
 	}, []);
 
-	return { phase, filename, progress, error, receive, reset };
+	return { phase, filenames, progress, error, receive, reset };
 }
 
 // ─── Helper ───────────────────────────────────────────────────────────────────
