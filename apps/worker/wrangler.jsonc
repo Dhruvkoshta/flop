@@ -17,14 +17,17 @@
     "not_found_handling": "single-page-application"
   },
 
+  // ── R2 Storage ───────────────────────────────────────────────────────────
+  "r2_buckets": [
+    {
+      "binding": "BUCKET",
+      "bucket_name": "flop-files"
+    }
+  ],
+
   // ── Environment variables ──────────────────────────────────────────────────
-  // Secrets (set via `wrangler secret put`):
-  //   AWS_ACCESS_KEY_ID      — AWS IAM Access Key ID
-  //   AWS_SECRET_ACCESS_KEY  — AWS IAM Secret Access Key
   // Non-secret vars:
   "vars": {
-    "AWS_REGION": "eu-north-1",
-    "S3_BUCKET_NAME": "flop-files",
     // Frontend and Worker are now the same origin — CORS is only needed for
     // any external origin (e.g. a custom domain before the Worker custom domain
     // is set up). Keep the Workers.dev URL here; add your custom domain too.

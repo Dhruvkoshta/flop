@@ -5,12 +5,6 @@ import { nanoid } from "nanoid";
 import { eq, and } from "drizzle-orm";
 import type { Env } from "../RoomDO";
 import { createDb, schema } from "../db";
-import {
-  getPresignedPutUrl,
-  getPresignedGetUrl,
-  deleteS3Object,
-  s3ConfigFromEnv,
-} from "../utils/s3";
 
 export const roomRouter = new Hono<{ Bindings: Env }>();
 
@@ -130,20 +124,17 @@ roomRouter.get("/personal/:alias", async (c) => {
     .from(schema.files)
     .where(eq(schema.files.roomId, room.id));
 
-  const s3cfg = s3ConfigFromEnv(c.env);
-  const files = await Promise.all(
-    fileRows.map(async (f) => ({
-      fileId: f.id,
-      name: f.name,
-      size: f.size,
-      mimeType: f.mimeType,
-      iv: f.iv,
-      keyBase64: f.keyBase64,
-      getUrl: await getPresignedGetUrl(s3cfg, f.id, 3600),
-      downloadCount: f.downloadCount,
-      createdAt: toISOSafe(f.createdAt),
-    })),
-  );
+  const files = fileRows.map((f) => ({
+    fileId: f.id,
+    name: f.name,
+    size: f.size,
+    mimeType: f.mimeType,
+    iv: f.iv,
+    keyBase64: f.keyBase64,
+    getUrl: `/api/file/${f.id}/raw`,
+    downloadCount: f.downloadCount,
+    createdAt: toISOSafe(f.createdAt),
+  }));
 
   return c.json({
     roomId: room.id,
