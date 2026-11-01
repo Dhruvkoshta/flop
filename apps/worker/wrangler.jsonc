@@ -4,6 +4,8 @@
   "main": "src/index.ts",
   "compatibility_date": "2025-03-01",
   "compatibility_flags": ["nodejs_compat_v2"],
+  "workers_dev": true,
+  "preview_urls": true,
 
   // ── Static Assets (SPA) ───────────────────────────────────────────────────
   // The built frontend (apps/web/dist) is served by this same Worker.
@@ -76,6 +78,48 @@
       "new_sqlite_classes": ["RoomDO"]
     }
   ],
+
+  "env": {
+    "preview": {
+      "name": "flop-worker-preview",
+      "r2_buckets": [
+        {
+          "binding": "BUCKET",
+          "bucket_name": "flop-files"
+        }
+      ],
+      "kv_namespaces": [
+        {
+          "binding": "KV_ALIASES",
+          "id": "743113f541924282bc9fbceb96c49ba3"
+        }
+      ],
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "flop-db",
+          "database_id": "1f50dbf3-6e47-4dec-9d48-5ab3bd218100",
+          "migrations_dir": "src/db/migrations"
+        }
+      ],
+      "durable_objects": {
+        "bindings": [
+          {
+            "name": "ROOM_DO",
+            "class_name": "RoomDO"
+          }
+        ]
+      },
+      "vars": {
+        "FRONTEND_ORIGIN": [
+          "https://flop-worker-preview.dhruvkoshta04.workers.dev",
+          "https://flop-worker.dhruvkoshta04.workers.dev",
+          "https://flop.dhruvkoshta.dev"
+        ],
+        "MAX_FILE_SIZE": "104857600"
+      }
+    }
+  },
 
   // ── Observability ─────────────────────────────────────────────────────────
   "observability": {
