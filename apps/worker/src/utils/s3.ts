@@ -21,6 +21,7 @@ function buildClient(cfg: S3Config): S3Client {
       accessKeyId: cfg.accessKeyId,
       secretAccessKey: cfg.secretAccessKey,
     },
+    requestChecksumCalculation: "WHEN_REQUIRED",
   });
 }
 

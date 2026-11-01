@@ -2,15 +2,13 @@ import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import { nanoid } from "nanoid";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
+import { RESERVED_ALIASES } from "@flop/shared";
 import type { Env } from "../RoomDO";
 import { createDb, schema } from "../db";
-import {
-  getPresignedPutUrl,
-  getPresignedGetUrl,
-  deleteS3Object,
-  s3ConfigFromEnv,
-} from "../utils/s3";
+
+// Cap storage at 9.5 GB to stay safely under Cloudflare R2's 10 GB free monthly limit
+const MAX_TOTAL_STORAGE_BYTES = 9.5 * 1024 * 1024 * 1024;
 
 export const roomRouter = new Hono<{ Bindings: Env }>();
 
@@ -49,17 +47,65 @@ roomRouter.post("/personal", zValidator("json", createPersonalSchema), async (c)
   const db = createDb(c.env.DB);
   const normalAlias = alias.toLowerCase();
 
+  // Check reserved keywords
+  if ((RESERVED_ALIASES as readonly string[]).includes(normalAlias)) {
+    return c.json({ error: "This room alias is reserved", code: "ALIAS_RESERVED" }, 400);
+  }
+
   // Check alias availability
   const existing = await db
-    .select({ alias: schema.aliases.alias, expiresAt: schema.aliases.expiresAt })
+    .select({ alias: schema.aliases.alias, roomId: schema.aliases.roomId, expiresAt: schema.aliases.expiresAt })
     .from(schema.aliases)
     .where(eq(schema.aliases.alias, normalAlias))
     .get();
 
   if (existing) {
     if (existing.expiresAt !== null && existing.expiresAt < new Date()) {
-      // Alias is expired, allow overwrite by deleting the old alias
+      // Alias is expired: clean up old files in R2, records in D1, and KV
+      try {
+        const oldFiles = await db
+          .select({ id: schema.files.id })
+          .from(schema.files)
+          .where(eq(schema.files.roomId, existing.roomId));
+
+        await Promise.allSettled(oldFiles.map((f) => c.env.BUCKET.delete(f.id)));
+        await db.delete(schema.files).where(eq(schema.files.roomId, existing.roomId));
+        await db.delete(schema.rooms).where(eq(schema.rooms.id, existing.roomId));
+      } catch (err) {
+        console.error("Cleanup of expired room failed:", err);
+      }
       await db.delete(schema.aliases).where(eq(schema.aliases.alias, normalAlias));
+      try {
+        await c.env.KV_ALIASES.delete(normalAlias);
+      } catch (err) {
+        // ignore
+      }
+    } else {
+      return c.json({ error: "Username already taken", code: "ALIAS_TAKEN" }, 409);
+    }
+  }
+
+  // Also clean up any lingering expired room that directly had this alias in rooms table
+  const staleRoom = await db
+    .select({ id: schema.rooms.id, expiresAt: schema.rooms.expiresAt })
+    .from(schema.rooms)
+    .where(eq(schema.rooms.alias, normalAlias))
+    .get();
+
+  if (staleRoom) {
+    if (staleRoom.expiresAt < new Date()) {
+      try {
+        const oldFiles = await db
+          .select({ id: schema.files.id })
+          .from(schema.files)
+          .where(eq(schema.files.roomId, staleRoom.id));
+
+        await Promise.allSettled(oldFiles.map((f) => c.env.BUCKET.delete(f.id)));
+        await db.delete(schema.files).where(eq(schema.files.roomId, staleRoom.id));
+        await db.delete(schema.rooms).where(eq(schema.rooms.id, staleRoom.id));
+      } catch (err) {
+        console.error("Cleanup of stale room failed:", err);
+      }
     } else {
       return c.json({ error: "Username already taken", code: "ALIAS_TAKEN" }, 409);
     }
@@ -86,6 +132,16 @@ roomRouter.post("/personal", zValidator("json", createPersonalSchema), async (c)
     createdAt: now,
     expiresAt,
   });
+
+  // Write to KV_ALIASES with automatic TTL eviction
+  try {
+    const ttlSeconds = Math.max(60, expiresIn * 60 * 60);
+    await c.env.KV_ALIASES.put(normalAlias, roomId, {
+      expirationTtl: ttlSeconds,
+    });
+  } catch (err) {
+    console.error("Failed to write to KV_ALIASES:", err);
+  }
 
   return c.json({ roomId, alias: normalAlias, expiresAt: toISOSafe(expiresAt) }, 201);
 });
@@ -130,20 +186,17 @@ roomRouter.get("/personal/:alias", async (c) => {
     .from(schema.files)
     .where(eq(schema.files.roomId, room.id));
 
-  const s3cfg = s3ConfigFromEnv(c.env);
-  const files = await Promise.all(
-    fileRows.map(async (f) => ({
-      fileId: f.id,
-      name: f.name,
-      size: f.size,
-      mimeType: f.mimeType,
-      iv: f.iv,
-      keyBase64: f.keyBase64,
-      getUrl: await getPresignedGetUrl(s3cfg, f.id, 3600),
-      downloadCount: f.downloadCount,
-      createdAt: toISOSafe(f.createdAt),
-    })),
-  );
+  const files = fileRows.map((f) => ({
+    fileId: f.id,
+    name: f.name,
+    size: f.size,
+    mimeType: f.mimeType,
+    iv: f.iv,
+    keyBase64: f.keyBase64,
+    getUrl: `/api/file/${f.id}/raw`,
+    downloadCount: f.downloadCount,
+    createdAt: toISOSafe(f.createdAt),
+  }));
 
   return c.json({
     roomId: room.id,
@@ -191,6 +244,16 @@ roomRouter.post(
       return c.json({ error: "Incorrect password", code: "WRONG_PASSWORD" }, 403);
     }
 
+    // Check total storage to stay within Cloudflare R2 free tier (10 GB)
+    const storageStats = await db
+      .select({ total: sql<number>`COALESCE(SUM(${schema.files.encryptedSize}), 0)` })
+      .from(schema.files)
+      .get();
+
+    if ((storageStats?.total ?? 0) + (size + 28) > MAX_TOTAL_STORAGE_BYTES) {
+      return c.json({ error: "Storage limit reached. Please delete old files or wait for cleanup.", code: "STORAGE_LIMIT_REACHED" }, 507);
+    }
+
     const fileId = nanoid(21);
     const encryptedSize = size + 28;
     const now = new Date();
@@ -209,13 +272,7 @@ roomRouter.post(
       expiresAt: room.expiresAt,
     });
 
-    const putUrl = await getPresignedPutUrl(
-      s3ConfigFromEnv(c.env),
-      fileId,
-      encryptedSize,
-      "application/octet-stream",
-      3600,
-    );
+    const putUrl = `/api/file/${fileId}/raw`;
 
     return c.json({ fileId, putUrl, expiresAt: toISOSafe(room.expiresAt) }, 201);
   },
@@ -259,7 +316,7 @@ roomRouter.delete(
       return c.json({ error: "File not found", code: "NOT_FOUND" }, 404);
     }
 
-    await deleteS3Object(s3ConfigFromEnv(c.env), fileId);
+    await c.env.BUCKET.delete(fileId);
     await db.delete(schema.files).where(eq(schema.files.id, fileId));
 
     return c.json({ ok: true });
@@ -369,6 +426,16 @@ roomRouter.post(
       return c.json({ error: "Room has expired", code: "EXPIRED" }, 410);
     }
 
+    // Check total storage to stay within Cloudflare R2 free tier (10 GB)
+    const storageStats = await db
+      .select({ total: sql<number>`COALESCE(SUM(${schema.files.encryptedSize}), 0)` })
+      .from(schema.files)
+      .get();
+
+    if ((storageStats?.total ?? 0) + (size + 28) > MAX_TOTAL_STORAGE_BYTES) {
+      return c.json({ error: "Storage limit reached. Please wait for expired files to clean up.", code: "STORAGE_LIMIT_REACHED" }, 507);
+    }
+
     const fileId = nanoid(21);
     const encryptedSize = size + 28;
     const now = new Date();
@@ -387,13 +454,7 @@ roomRouter.post(
       expiresAt: room.expiresAt,
     });
 
-    const putUrl = await getPresignedPutUrl(
-      s3ConfigFromEnv(c.env),
-      fileId,
-      encryptedSize,
-      "application/octet-stream",
-      3600,
-    );
+    const putUrl = `/api/file/${fileId}/raw`;
 
     return c.json({ fileId, putUrl, expiresAt: toISOSafe(room.expiresAt) }, 201);
   },
@@ -425,18 +486,15 @@ roomRouter.get("/:roomId/send", async (c) => {
     .from(schema.files)
     .where(eq(schema.files.roomId, roomId));
 
-  const s3cfg = s3ConfigFromEnv(c.env);
-  const files = await Promise.all(
-    fileRows.map(async (f) => ({
-      fileId: f.id,
-      name: f.name,
-      size: f.size,
-      mimeType: f.mimeType,
-      iv: f.iv,
-      keyBase64: f.keyBase64,
-      getUrl: await getPresignedGetUrl(s3cfg, f.id, 3600),
-    })),
-  );
+  const files = fileRows.map((f) => ({
+    fileId: f.id,
+    name: f.name,
+    size: f.size,
+    mimeType: f.mimeType,
+    iv: f.iv,
+    keyBase64: f.keyBase64,
+    getUrl: `/api/file/${f.id}/raw`,
+  }));
 
   return c.json({ roomId: room.id, expiresAt: toISOSafe(room.expiresAt), files });
 });

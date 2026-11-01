@@ -11,13 +11,14 @@
 
 import type {
 	AddPersonalFileResponse,
+	CheckAliasResponse,
 	CreatePersonalRoomResponse,
 	PersonalFileDownloadState,
 	PersonalFileUploadState,
 	PersonalRoomResponse,
 	PersonalUploadPhase,
 } from "@flop/shared";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
 	decryptBlob,
 	downloadBuffer,
@@ -28,7 +29,102 @@ import {
 	importKey,
 } from "@/lib/crypto";
 
-// ─── Create hook ──────────────────────────────────────────────────────────────
+// ─── Alias check hook (KV-backed real-time validation) ──────────────────────
+
+export type AliasAvailabilityStatus =
+	| "idle"
+	| "checking"
+	| "available"
+	| "taken"
+	| "reserved"
+	| "invalid";
+
+export interface AliasAvailability {
+	status: AliasAvailabilityStatus;
+	message?: string;
+}
+
+export function useAliasCheck(alias: string): AliasAvailability {
+	const [availability, setAvailability] = useState<AliasAvailability>({
+		status: "idle",
+	});
+
+	useEffect(() => {
+		const trimmed = alias.trim().toLowerCase();
+		if (!trimmed) {
+			setAvailability({ status: "idle" });
+			return;
+		}
+
+		if (trimmed.length < 2) {
+			setAvailability({ status: "invalid", message: "Minimum 2 characters" });
+			return;
+		}
+
+		if (trimmed.length > 32) {
+			setAvailability({ status: "invalid", message: "Maximum 32 characters" });
+			return;
+		}
+
+		if (!/^[a-z0-9-]+$/.test(trimmed)) {
+			setAvailability({
+				status: "invalid",
+				message: "Only lowercase letters, numbers, and hyphens",
+			});
+			return;
+		}
+
+		setAvailability({ status: "checking" });
+
+		const controller = new AbortController();
+		const timer = setTimeout(async () => {
+			try {
+				const res = await fetch(
+					`/api/aliases/check/${encodeURIComponent(trimmed)}`,
+					{
+						signal: controller.signal,
+					},
+				);
+				if (!res.ok) {
+					const err = await res
+						.json()
+						.catch(() => ({ error: "Check failed" }));
+					setAvailability({
+						status: "invalid",
+						message: err.error || "Check failed",
+					});
+					return;
+				}
+				const data = (await res.json()) as CheckAliasResponse;
+				if (data.available) {
+					setAvailability({ status: "available", message: "Handle available" });
+				} else if (data.reason === "reserved") {
+					setAvailability({
+						status: "reserved",
+						message: "Reserved system handle",
+					});
+				} else if (data.reason === "taken") {
+					setAvailability({ status: "taken", message: "Handle already taken" });
+				} else {
+					setAvailability({ status: "invalid", message: "Invalid handle" });
+				}
+			} catch (err: unknown) {
+				if ((err as Error).name !== "AbortError") {
+					setAvailability({ status: "idle" });
+				}
+			}
+		}, 300);
+
+		return () => {
+			clearTimeout(timer);
+			controller.abort();
+		};
+	}, [alias]);
+
+	return availability;
+}
+
+// ─── Create hook ────────────────────────────────────────────────────────────
 
 export interface CreatePersonalRoomOptions {
 	alias: string;
@@ -41,7 +137,7 @@ export interface UsePersonalRoomCreateReturn {
 	phase: "idle" | "creating" | "done" | "error";
 	result: CreatePersonalRoomResponse | null;
 	error: string | null;
-	create: (opts: CreatePersonalRoomOptions) => Promise<void>;
+	create: (opts: CreatePersonalRoomOptions) => Promise<CreatePersonalRoomResponse>;
 	reset: () => void;
 }
 
@@ -58,7 +154,7 @@ export function usePersonalRoomCreate(): UsePersonalRoomCreateReturn {
 		setError(null);
 	}, []);
 
-	const create = useCallback(async (opts: CreatePersonalRoomOptions) => {
+	const create = useCallback(async (opts: CreatePersonalRoomOptions): Promise<CreatePersonalRoomResponse> => {
 		try {
 			setPhase("creating");
 			setError(null);
@@ -84,9 +180,11 @@ export function usePersonalRoomCreate(): UsePersonalRoomCreateReturn {
 			const data = (await res.json()) as CreatePersonalRoomResponse;
 			setResult(data);
 			setPhase("done");
+			return data;
 		} catch (err) {
 			setError(err instanceof Error ? err.message : "Unknown error");
 			setPhase("error");
+			throw err;
 		}
 	}, []);
 

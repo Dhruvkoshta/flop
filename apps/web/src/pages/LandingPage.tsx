@@ -198,7 +198,7 @@ export function LandingPage() {
 							Personal Room
 						</p>
 						<p className="text-xs text-muted-foreground leading-relaxed">
-							Claim a permanent alias (e.g. <code className="text-primary">/u/dhruv</code>).
+							Claim a personal room handle (e.g. <code className="text-primary">/dhruv</code>).
 							Password-protected uploads. Anyone with the link can download.
 							Files encrypted with AES-GCM-256, keys stored server-side.
 						</p>

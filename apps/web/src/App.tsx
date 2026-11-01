@@ -1,10 +1,15 @@
-import { Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes, useParams } from "react-router-dom";
 import { LandingPage } from "@/pages/LandingPage";
 import { PersonalRoomCreatePage } from "@/pages/PersonalRoomCreatePage";
 import { PersonalRoomPage } from "@/pages/PersonalRoomPage";
 import { SendPage } from "@/pages/SendPage";
 import { ReceivePage } from "@/pages/ReceivePage";
 import { useTheme } from "@/hooks/useTheme";
+
+function LegacyAliasRedirect() {
+	const { alias } = useParams<{ alias: string }>();
+	return <Navigate to={`/${alias ?? ""}`} replace />;
+}
 
 function NotFound() {
 	return (
@@ -33,9 +38,10 @@ export default function App() {
 		<Routes>
 			<Route path="/" element={<LandingPage />} />
 			<Route path="/personal" element={<PersonalRoomCreatePage />} />
-			<Route path="/u/:alias" element={<PersonalRoomPage />} />
 			<Route path="/send" element={<SendPage />} />
 			<Route path="/r/:roomId" element={<ReceivePage />} />
+			<Route path="/u/:alias" element={<LegacyAliasRedirect />} />
+			<Route path="/:alias" element={<PersonalRoomPage />} />
 			<Route path="*" element={<NotFound />} />
 		</Routes>
 	);

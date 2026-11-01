@@ -1,6 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
 import type { ClientMessage, ServerMessage, PeerRole } from "@flop/shared";
-import { deleteS3Object, s3ConfigFromEnv } from "./utils/s3";
 import { createDb, schema } from "./db";
 import { eq } from "drizzle-orm";
 
@@ -10,11 +9,8 @@ export interface Env {
   ROOM_DO: DurableObjectNamespace<RoomDO>;
   DB: D1Database;
   KV_ALIASES: KVNamespace;
+  BUCKET: R2Bucket;
   ASSETS: Fetcher;
-  AWS_REGION: string;
-  AWS_ACCESS_KEY_ID: string;
-  AWS_SECRET_ACCESS_KEY: string;
-  S3_BUCKET_NAME: string;
   FRONTEND_ORIGIN: string | string[];
   MAX_FILE_SIZE: string;
 }
@@ -203,7 +199,7 @@ export class RoomDO extends DurableObject<Env> {
     this.handleDisconnect(ws);
   }
 
-  // ── Alarm: fires after 24h — cleans up all S3 objects in the room ─────────
+  // ── Alarm: fires after 24h — cleans up all objects in the room ─────────
 
   async alarm(): Promise<void> {
     const row = this.getRoomRow();
@@ -211,7 +207,7 @@ export class RoomDO extends DurableObject<Env> {
 
     const roomId = row.room_id;
 
-    // Delete all files in this room from S3 via D1 lookup
+    // Delete all files in this room from R2 via D1 lookup
     try {
       const db = createDb(this.env.DB);
       const files = await db
@@ -220,7 +216,7 @@ export class RoomDO extends DurableObject<Env> {
         .where(eq(schema.files.roomId, roomId));
 
       await Promise.allSettled(
-        files.map((f) => deleteS3Object(s3ConfigFromEnv(this.env), f.id)),
+        files.map((f) => this.env.BUCKET.delete(f.id)),
       );
 
       // Clean up D1 records
