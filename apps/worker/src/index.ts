@@ -22,6 +22,7 @@ app.use(
     origin: (origin, c) => {
       const allowed = c.env.FRONTEND_ORIGIN;
       if (!origin) return "";
+      if (origin.endsWith(".workers.dev")) return origin;
       if (Array.isArray(allowed)) {
         return allowed.includes(origin) ? origin : "";
       }
