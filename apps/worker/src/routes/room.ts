@@ -2,9 +2,12 @@ import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import { nanoid } from "nanoid";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import type { Env } from "../RoomDO";
 import { createDb, schema } from "../db";
+
+// Cap storage at 9.5 GB to stay safely under Cloudflare R2's 10 GB free monthly limit
+const MAX_TOTAL_STORAGE_BYTES = 9.5 * 1024 * 1024 * 1024;
 
 export const roomRouter = new Hono<{ Bindings: Env }>();
 
@@ -182,6 +185,16 @@ roomRouter.post(
       return c.json({ error: "Incorrect password", code: "WRONG_PASSWORD" }, 403);
     }
 
+    // Check total storage to stay within Cloudflare R2 free tier (10 GB)
+    const storageStats = await db
+      .select({ total: sql<number>`COALESCE(SUM(${schema.files.encryptedSize}), 0)` })
+      .from(schema.files)
+      .get();
+
+    if ((storageStats?.total ?? 0) + (size + 28) > MAX_TOTAL_STORAGE_BYTES) {
+      return c.json({ error: "Storage limit reached. Please delete old files or wait for cleanup.", code: "STORAGE_LIMIT_REACHED" }, 507);
+    }
+
     const fileId = nanoid(21);
     const encryptedSize = size + 28;
     const now = new Date();
@@ -200,13 +213,7 @@ roomRouter.post(
       expiresAt: room.expiresAt,
     });
 
-    const putUrl = await getPresignedPutUrl(
-      s3ConfigFromEnv(c.env),
-      fileId,
-      encryptedSize,
-      "application/octet-stream",
-      3600,
-    );
+    const putUrl = `/api/file/${fileId}/raw`;
 
     return c.json({ fileId, putUrl, expiresAt: toISOSafe(room.expiresAt) }, 201);
   },
@@ -250,7 +257,7 @@ roomRouter.delete(
       return c.json({ error: "File not found", code: "NOT_FOUND" }, 404);
     }
 
-    await deleteS3Object(s3ConfigFromEnv(c.env), fileId);
+    await c.env.BUCKET.delete(fileId);
     await db.delete(schema.files).where(eq(schema.files.id, fileId));
 
     return c.json({ ok: true });
@@ -360,6 +367,16 @@ roomRouter.post(
       return c.json({ error: "Room has expired", code: "EXPIRED" }, 410);
     }
 
+    // Check total storage to stay within Cloudflare R2 free tier (10 GB)
+    const storageStats = await db
+      .select({ total: sql<number>`COALESCE(SUM(${schema.files.encryptedSize}), 0)` })
+      .from(schema.files)
+      .get();
+
+    if ((storageStats?.total ?? 0) + (size + 28) > MAX_TOTAL_STORAGE_BYTES) {
+      return c.json({ error: "Storage limit reached. Please wait for expired files to clean up.", code: "STORAGE_LIMIT_REACHED" }, 507);
+    }
+
     const fileId = nanoid(21);
     const encryptedSize = size + 28;
     const now = new Date();
@@ -378,13 +395,7 @@ roomRouter.post(
       expiresAt: room.expiresAt,
     });
 
-    const putUrl = await getPresignedPutUrl(
-      s3ConfigFromEnv(c.env),
-      fileId,
-      encryptedSize,
-      "application/octet-stream",
-      3600,
-    );
+    const putUrl = `/api/file/${fileId}/raw`;
 
     return c.json({ fileId, putUrl, expiresAt: toISOSafe(room.expiresAt) }, 201);
   },
@@ -416,18 +427,15 @@ roomRouter.get("/:roomId/send", async (c) => {
     .from(schema.files)
     .where(eq(schema.files.roomId, roomId));
 
-  const s3cfg = s3ConfigFromEnv(c.env);
-  const files = await Promise.all(
-    fileRows.map(async (f) => ({
-      fileId: f.id,
-      name: f.name,
-      size: f.size,
-      mimeType: f.mimeType,
-      iv: f.iv,
-      keyBase64: f.keyBase64,
-      getUrl: await getPresignedGetUrl(s3cfg, f.id, 3600),
-    })),
-  );
+  const files = fileRows.map((f) => ({
+    fileId: f.id,
+    name: f.name,
+    size: f.size,
+    mimeType: f.mimeType,
+    iv: f.iv,
+    keyBase64: f.keyBase64,
+    getUrl: `/api/file/${f.id}/raw`,
+  }));
 
   return c.json({ roomId: room.id, expiresAt: toISOSafe(room.expiresAt), files });
 });
