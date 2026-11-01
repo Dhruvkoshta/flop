@@ -67,6 +67,12 @@ app.get("/api/room/:roomId/ws", async (c) => {
   return stub.fetch(new Request(url.toString(), c.req.raw));
 });
 
+// Legacy redirect from /u/:alias -> /:alias
+app.get("/u/:alias", (c) => {
+  const alias = c.req.param("alias");
+  return c.redirect(`/${alias}`, 301);
+});
+
 
 
 app.notFound((c) => {

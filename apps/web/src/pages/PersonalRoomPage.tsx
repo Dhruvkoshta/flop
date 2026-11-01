@@ -21,7 +21,7 @@ import {
 	X,
 } from "lucide-react";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useLocation, useParams } from "react-router-dom";
 import QRCode from "react-qr-code";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -299,6 +299,8 @@ function PasswordGate({
 
 export function PersonalRoomPage() {
 	const { alias } = useParams<{ alias: string }>();
+	const location = useLocation();
+	const locationState = location.state as { ownerPassword?: string; justCreated?: boolean } | null;
 	const {
 		loadPhase,
 		room,
@@ -357,10 +359,23 @@ export function PersonalRoomPage() {
 			ownerPasswordHashRef.current = passwordHash;
 			setOwnerPassword(password);
 			setIsOwner(true);
+			if (alias) {
+				sessionStorage.setItem(`flop_owner_${alias}`, password);
+			}
 		} catch {
 			setAuthError("Authentication failed");
 		}
 	};
+
+	useEffect(() => {
+		if (!room || loadPhase !== "ready" || isOwner) return;
+		const savedPassword =
+			locationState?.ownerPassword ||
+			(alias ? sessionStorage.getItem(`flop_owner_${alias}`) : null);
+		if (savedPassword) {
+			handleUnlock(savedPassword);
+		}
+	}, [room, loadPhase, isOwner, alias, locationState]);
 
 	const addFiles = useCallback((incoming: FileList | File[]) => {
 		const arr = Array.from(incoming);
@@ -429,7 +444,7 @@ export function PersonalRoomPage() {
 	const isReady = loadPhase === "ready";
 	const isError = loadPhase === "error";
 
-	const roomUrl = `${window.location.origin}/u/${alias}`;
+	const roomUrl = `${window.location.origin}/${alias}`;
 
 	const copyRoomLink = async () => {
 		await navigator.clipboard.writeText(roomUrl);
@@ -465,6 +480,23 @@ export function PersonalRoomPage() {
 					transition={{ duration: 0.3 }}
 					className="w-full max-w-xl space-y-4"
 				>
+					{/* Just Created Banner */}
+					{locationState?.justCreated && (
+						<motion.div
+							initial={{ opacity: 0, y: -10 }}
+							animate={{ opacity: 1, y: 0 }}
+							className="p-4 rounded-xl border border-emerald-500/30 bg-emerald-500/10 text-emerald-500 flex items-center gap-3 text-xs"
+						>
+							<CheckCircle2 className="h-5 w-5 shrink-0" />
+							<div>
+								<p className="font-semibold uppercase tracking-wider">Room Created Successfully!</p>
+								<p className="text-muted-foreground text-[11px] mt-0.5">
+									You are logged in as owner. Upload files or share your room link <span className="font-mono text-emerald-500">/{alias}</span>.
+								</p>
+							</div>
+						</motion.div>
+					)}
+
 					{/* Title Block */}
 					<div className="border border-border bg-card/90 backdrop-blur-md rounded-2xl overflow-hidden shadow-sm">
 						<div className="p-6 border-b border-border bg-muted/20 flex items-center justify-between">
@@ -483,7 +515,7 @@ export function PersonalRoomPage() {
 									<p className="text-xs text-muted-foreground mt-0.5 font-mono">
 										{isLoading && "Fetching room payload..."}
 										{isError && (loadError ?? "This room may not exist")}
-										{isReady && `${totalCount} ${totalCount === 1 ? "file" : "files"} · ${formatBytes(totalBytes)} · /u/${alias}`}
+										{isReady && `${totalCount} ${totalCount === 1 ? "file" : "files"} · ${formatBytes(totalBytes)} · /${alias}`}
 									</p>
 								</div>
 							</div>
@@ -523,7 +555,7 @@ export function PersonalRoomPage() {
 										<QRCode value={roomUrl} size={150} bgColor="#ffffff" fgColor="#000000" />
 									</div>
 									<p className="text-[11px] text-muted-foreground text-center">
-										Scan QR code to open <span className="font-mono text-primary">/u/{alias}</span> on another device
+										Scan QR code to open <span className="font-mono text-primary">/{alias}</span> on another device
 									</p>
 								</motion.div>
 							)}

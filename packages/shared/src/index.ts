@@ -123,6 +123,30 @@ export interface ErrorResponse {
 
 // ─── Alias resolution ─────────────────────────────────────────────────────────
 
+export const RESERVED_ALIASES = [
+  "personal",
+  "send",
+  "r",
+  "u",
+  "api",
+  "assets",
+  "favicon.ico",
+  "robots.txt",
+  "sitemap.xml",
+  "manifest.json",
+  "health",
+  "admin",
+  "login",
+  "null",
+  "undefined",
+] as const;
+
+export interface CheckAliasResponse {
+  alias: string;
+  available: boolean;
+  reason?: "invalid" | "reserved" | "taken";
+}
+
 export interface AliasResolveResponse {
   alias: string;
   roomId: string;

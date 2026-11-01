@@ -3,6 +3,7 @@ import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import { nanoid } from "nanoid";
 import { eq, and, sql } from "drizzle-orm";
+import { RESERVED_ALIASES } from "@flop/shared";
 import type { Env } from "../RoomDO";
 import { createDb, schema } from "../db";
 
@@ -46,17 +47,65 @@ roomRouter.post("/personal", zValidator("json", createPersonalSchema), async (c)
   const db = createDb(c.env.DB);
   const normalAlias = alias.toLowerCase();
 
+  // Check reserved keywords
+  if ((RESERVED_ALIASES as readonly string[]).includes(normalAlias)) {
+    return c.json({ error: "This room alias is reserved", code: "ALIAS_RESERVED" }, 400);
+  }
+
   // Check alias availability
   const existing = await db
-    .select({ alias: schema.aliases.alias, expiresAt: schema.aliases.expiresAt })
+    .select({ alias: schema.aliases.alias, roomId: schema.aliases.roomId, expiresAt: schema.aliases.expiresAt })
     .from(schema.aliases)
     .where(eq(schema.aliases.alias, normalAlias))
     .get();
 
   if (existing) {
     if (existing.expiresAt !== null && existing.expiresAt < new Date()) {
-      // Alias is expired, allow overwrite by deleting the old alias
+      // Alias is expired: clean up old files in R2, records in D1, and KV
+      try {
+        const oldFiles = await db
+          .select({ id: schema.files.id })
+          .from(schema.files)
+          .where(eq(schema.files.roomId, existing.roomId));
+
+        await Promise.allSettled(oldFiles.map((f) => c.env.BUCKET.delete(f.id)));
+        await db.delete(schema.files).where(eq(schema.files.roomId, existing.roomId));
+        await db.delete(schema.rooms).where(eq(schema.rooms.id, existing.roomId));
+      } catch (err) {
+        console.error("Cleanup of expired room failed:", err);
+      }
       await db.delete(schema.aliases).where(eq(schema.aliases.alias, normalAlias));
+      try {
+        await c.env.KV_ALIASES.delete(normalAlias);
+      } catch (err) {
+        // ignore
+      }
+    } else {
+      return c.json({ error: "Username already taken", code: "ALIAS_TAKEN" }, 409);
+    }
+  }
+
+  // Also clean up any lingering expired room that directly had this alias in rooms table
+  const staleRoom = await db
+    .select({ id: schema.rooms.id, expiresAt: schema.rooms.expiresAt })
+    .from(schema.rooms)
+    .where(eq(schema.rooms.alias, normalAlias))
+    .get();
+
+  if (staleRoom) {
+    if (staleRoom.expiresAt < new Date()) {
+      try {
+        const oldFiles = await db
+          .select({ id: schema.files.id })
+          .from(schema.files)
+          .where(eq(schema.files.roomId, staleRoom.id));
+
+        await Promise.allSettled(oldFiles.map((f) => c.env.BUCKET.delete(f.id)));
+        await db.delete(schema.files).where(eq(schema.files.roomId, staleRoom.id));
+        await db.delete(schema.rooms).where(eq(schema.rooms.id, staleRoom.id));
+      } catch (err) {
+        console.error("Cleanup of stale room failed:", err);
+      }
     } else {
       return c.json({ error: "Username already taken", code: "ALIAS_TAKEN" }, 409);
     }
@@ -83,6 +132,16 @@ roomRouter.post("/personal", zValidator("json", createPersonalSchema), async (c)
     createdAt: now,
     expiresAt,
   });
+
+  // Write to KV_ALIASES with automatic TTL eviction
+  try {
+    const ttlSeconds = Math.max(60, expiresIn * 60 * 60);
+    await c.env.KV_ALIASES.put(normalAlias, roomId, {
+      expirationTtl: ttlSeconds,
+    });
+  } catch (err) {
+    console.error("Failed to write to KV_ALIASES:", err);
+  }
 
   return c.json({ roomId, alias: normalAlias, expiresAt: toISOSafe(expiresAt) }, 201);
 });

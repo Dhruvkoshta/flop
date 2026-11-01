@@ -21,7 +21,7 @@ import { useId, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import QRCode from "react-qr-code";
 import { motion, AnimatePresence } from "framer-motion";
-import { usePersonalRoomCreate } from "@/hooks/usePersonalRoom";
+import { usePersonalRoomCreate, useAliasCheck } from "@/hooks/usePersonalRoom";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import { UiTipBanner, UiTipsDrawer, UiTipTooltip } from "@/components/ui/UiTips";
@@ -94,23 +94,29 @@ export function PersonalRoomCreatePage() {
 	const isDone = phase === "done";
 
 	const passStrength = calculatePasswordStrength(password);
-	const isAliasValid = alias.length >= 2 && /^[a-z0-9-]+$/.test(alias);
+	const availability = useAliasCheck(alias);
 
 	const handleSubmit = async () => {
 		setValidationError(null);
 
 		if (!alias.trim()) {
-			setValidationError("Alias is required");
+			setValidationError("Handle is required");
 			return;
 		}
-		if (!/^[a-z0-9-]+$/.test(alias)) {
-			setValidationError(
-				"Alias must be lowercase letters, numbers, or hyphens",
-			);
+		if (availability.status === "checking") {
+			setValidationError("Checking handle availability...");
 			return;
 		}
-		if (alias.length < 2 || alias.length > 32) {
-			setValidationError("Alias must be 2–32 characters");
+		if (availability.status === "taken") {
+			setValidationError("Handle is already taken");
+			return;
+		}
+		if (availability.status === "reserved") {
+			setValidationError("Handle is reserved");
+			return;
+		}
+		if (availability.status === "invalid") {
+			setValidationError(availability.message || "Invalid handle format");
 			return;
 		}
 		if (!password) {
@@ -126,7 +132,13 @@ export function PersonalRoomCreatePage() {
 			return;
 		}
 
-		await create({ alias, label: label.trim() || undefined, password, expiresIn });
+		try {
+			const created = await create({ alias, label: label.trim() || undefined, password, expiresIn });
+			sessionStorage.setItem(`flop_owner_${created.alias}`, password);
+			navigate(`/${created.alias}`, { replace: true, state: { ownerPassword: password, justCreated: true } });
+		} catch {
+			// error state is handled by hook
+		}
 	};
 
 	const copyLink = async (url: string) => {
@@ -182,7 +194,7 @@ export function PersonalRoomCreatePage() {
 									<p className="text-xs text-muted-foreground mt-0.5">
 										Handle:{" "}
 										<span className="text-primary font-mono font-semibold">
-											/u/{result.alias}
+											/{result.alias}
 										</span>
 									</p>
 								</div>
@@ -268,7 +280,7 @@ export function PersonalRoomCreatePage() {
 
 								<button
 									type="button"
-									onClick={() => navigate(`/u/${result.alias}`)}
+									onClick={() => navigate(`/${result.alias}`)}
 									className="w-full flex items-center justify-center gap-2 bg-primary text-primary-foreground px-4 py-3 rounded-xl text-sm font-bold uppercase tracking-wider hover:bg-primary/90 transition-all shadow-md active:scale-[0.99]"
 								>
 									<span>Enter Room Now</span>
@@ -322,7 +334,7 @@ export function PersonalRoomCreatePage() {
 								</h1>
 								<p className="text-xs text-muted-foreground mt-0.5">
 									Claim a unique handle at{" "}
-									<span className="font-mono text-primary font-medium">/u/alias</span>
+									<span className="font-mono text-primary font-medium">/{alias || "handle"}</span>
 								</p>
 							</div>
 						</div>
@@ -333,23 +345,37 @@ export function PersonalRoomCreatePage() {
 							<div className="space-y-1.5">
 								<div className="flex items-center justify-between">
 									<label htmlFor={aliasId} className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
-										<span>Room Alias</span>
+										<span>Room Handle</span>
 										<span className="text-destructive">*</span>
 									</label>
 									{alias && (
 										<span className={cn(
 											"text-[10px] font-mono px-2 py-0.5 rounded-md flex items-center gap-1",
-											isAliasValid ? "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20" : "bg-destructive/10 text-destructive border border-destructive/20"
+											availability.status === "available"
+												? "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20"
+												: availability.status === "checking"
+												? "bg-primary/10 text-primary border border-primary/20"
+												: "bg-destructive/10 text-destructive border border-destructive/20"
 										)}>
-											{isAliasValid ? <Check className="h-3 w-3" /> : <AlertTriangle className="h-3 w-3" />}
-											{isAliasValid ? "Available Format" : "Invalid Format"}
+											{availability.status === "checking" && <Loader2 className="h-3 w-3 animate-spin" />}
+											{availability.status === "available" && <Check className="h-3 w-3" />}
+											{availability.status === "taken" && <AlertTriangle className="h-3 w-3" />}
+											{availability.status === "reserved" && <AlertTriangle className="h-3 w-3" />}
+											{availability.status === "invalid" && <AlertTriangle className="h-3 w-3" />}
+											<span>
+												{availability.status === "checking" && "Checking..."}
+												{availability.status === "available" && "Available"}
+												{availability.status === "taken" && "Taken"}
+												{availability.status === "reserved" && "Reserved"}
+												{availability.status === "invalid" && "Invalid"}
+											</span>
 										</span>
 									)}
 								</div>
 
 								<div className="flex items-center border border-input rounded-xl focus-within:border-primary transition-all bg-background overflow-hidden">
 									<span className="px-3.5 py-2.5 text-xs text-muted-foreground border-r border-input bg-muted/30 font-mono shrink-0">
-										/u/
+										/
 									</span>
 									<input
 										id={aliasId}
@@ -362,6 +388,9 @@ export function PersonalRoomCreatePage() {
 										className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground px-3.5 py-2.5 outline-none font-mono"
 									/>
 								</div>
+								{availability.message && availability.status !== "available" && availability.status !== "idle" && (
+									<p className="text-[11px] text-destructive">{availability.message}</p>
+								)}
 								<p className="text-[11px] text-muted-foreground">
 									2–32 characters (lowercase letters, numbers, hyphens)
 								</p>
